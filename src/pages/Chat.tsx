@@ -11,7 +11,9 @@ import {
   Shield,
   ChevronDown,
   FileText,
-  Settings2
+  Settings2,
+  Wifi,
+  WifiOff
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useChatStore, ProviderType } from "@/stores/chatStore";
@@ -28,6 +30,8 @@ import { DataPreviewModal } from "@/components/chat/DataPreviewModal";
 import { MessageContextMenu } from "@/components/chat/MessageContextMenu";
 import { detectSensitiveData } from "@/lib/sensitiveDetector";
 import { estimateTokens } from "@/lib/documentParser";
+import { streamAI, isLocalProvider, needsApiKey } from "@/lib/localAIClient";
+import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,8 +51,9 @@ import {
 const providerOptions: { id: ProviderType; name: string; icon: typeof Cloud; type: 'local' | 'cloud' }[] = [
   { id: 'local-ollama', name: 'Ollama (Local)', icon: Cpu, type: 'local' },
   { id: 'local-lmstudio', name: 'LM Studio (Local)', icon: Cpu, type: 'local' },
-  { id: 'cloud-gemini', name: 'Gemini 2.5 Flash', icon: Cloud, type: 'cloud' },
-  { id: 'cloud-gpt5', name: 'GPT-5', icon: Cloud, type: 'cloud' },
+  { id: 'cloud-gemini', name: 'Google AI (Gemini)', icon: Cloud, type: 'cloud' },
+  { id: 'cloud-gpt5', name: 'OpenAI (GPT-4o)', icon: Cloud, type: 'cloud' },
+  { id: 'cloud-anthropic' as ProviderType, name: 'Anthropic (Claude)', icon: Cloud, type: 'cloud' },
 ];
 
 export default function Chat() {
@@ -77,12 +82,18 @@ export default function Chat() {
 
   const { prompts } = usePromptsStore();
   const { addEntry, paranoidMode, showDataPreview: alwaysShowPreview } = useAuditStore();
-  const { temperature, maxTokens } = useSettingsStore();
+  const { temperature, maxTokens, cloudApiKeys } = useSettingsStore();
   const { documents } = useKnowledgeStore();
+  const { isOnline } = useNetworkStatus();
 
   const activeConversation = conversations.find(c => c.id === activeConversationId);
   const selectedPrompt = prompts.find(p => p.id === selectedPromptId);
   const isCloudProvider = !selectedProvider.startsWith('local-');
+  const providerNeedsKey = needsApiKey(selectedProvider as any);
+  const hasRequiredKey = !providerNeedsKey || 
+    (selectedProvider.includes('openai') || selectedProvider === 'cloud-gpt5' ? cloudApiKeys.openai :
+     selectedProvider.includes('google') || selectedProvider === 'cloud-gemini' ? cloudApiKeys.google :
+     selectedProvider.includes('anthropic') ? cloudApiKeys.anthropic : false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -183,175 +194,46 @@ export default function Chat() {
 
     try {
       const currentConv = useChatStore.getState().conversations.find(c => c.id === convId);
-      const messagesToSend = currentConv?.messages.map(m => ({ role: m.role, content: m.content })) || [];
+      const messagesToSend = currentConv?.messages.map(m => ({ role: m.role as 'user' | 'assistant' | 'system', content: m.content })) || [];
       messagesToSend.push({ role: 'user', content: fullMessage });
 
-      const isLocal = selectedProvider.startsWith('local-');
-      
-      if (isLocal) {
-        const endpoint = selectedProvider === 'local-ollama' 
-          ? 'http://localhost:11434/api/chat'
-          : 'http://localhost:1234/v1/chat/completions';
+      addMessage(convId!, { role: 'assistant', content: '', provider: selectedProvider });
 
-        try {
-          addMessage(convId!, { role: 'assistant', content: '', provider: selectedProvider });
-          
-          if (selectedProvider === 'local-ollama') {
-            const response = await fetch(endpoint, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                model: 'llama3.2',
-                messages: selectedPrompt 
-                  ? [{ role: 'system', content: selectedPrompt.content }, ...messagesToSend]
-                  : messagesToSend,
-                stream: true,
-                options: {
-                  temperature,
-                  num_predict: maxTokens,
-                }
-              }),
-            });
-
-            if (!response.ok) throw new Error('Ollama not available');
-            
-            const reader = response.body?.getReader();
-            if (!reader) throw new Error('No reader');
-
-            let assistantContent = "";
-            const decoder = new TextDecoder();
-
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-
-              const chunk = decoder.decode(value, { stream: true });
-              const lines = chunk.split('\n').filter(Boolean);
-
-              for (const line of lines) {
-                try {
-                  const parsed = JSON.parse(line);
-                  if (parsed.message?.content) {
-                    assistantContent += parsed.message.content;
-                    updateLastMessage(convId!, assistantContent);
-                  }
-                } catch {}
-              }
-            }
-          } else {
-            const response = await fetch(endpoint, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                model: 'local-model',
-                messages: selectedPrompt 
-                  ? [{ role: 'system', content: selectedPrompt.content }, ...messagesToSend]
-                  : messagesToSend,
-                stream: true,
-                temperature,
-                max_tokens: maxTokens,
-              }),
-            });
-
-            if (!response.ok) throw new Error('LM Studio not available');
-
-            const reader = response.body?.getReader();
-            if (!reader) throw new Error('No reader');
-
-            let assistantContent = "";
-            const decoder = new TextDecoder();
-
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-
-              const chunk = decoder.decode(value, { stream: true });
-              const lines = chunk.split('\n');
-
-              for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                  const data = line.slice(6).trim();
-                  if (data === '[DONE]') continue;
-                  try {
-                    const parsed = JSON.parse(data);
-                    const content = parsed.choices?.[0]?.delta?.content;
-                    if (content) {
-                      assistantContent += content;
-                      updateLastMessage(convId!, assistantContent);
-                    }
-                  } catch {}
-                }
-              }
-            }
-          }
-        } catch (error) {
-          console.error('Local AI error:', error);
-          updateLastMessage(convId!, `⚠️ Local AI not available. Make sure ${selectedProvider === 'local-ollama' ? 'Ollama' : 'LM Studio'} is running.`);
-        }
-      } else {
-        addMessage(convId!, { role: 'assistant', content: '', provider: selectedProvider });
-
-        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-          },
-          body: JSON.stringify({
-            messages: messagesToSend,
-            provider: selectedProvider,
-            systemPrompt: selectedPrompt?.content,
-            temperature,
-            maxTokens,
-          }),
-        });
-
-        if (!response.ok) {
-          if (response.status === 429) {
-            throw new Error('Rate limit exceeded. Please wait a moment.');
-          }
-          if (response.status === 402) {
-            throw new Error('AI credits exhausted. Please add more credits.');
-          }
-          throw new Error('Cloud AI error');
-        }
-
-        const reader = response.body?.getReader();
-        if (!reader) throw new Error('No reader');
-
-        let assistantContent = "";
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          
-          let newlineIndex: number;
-          while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
-            let line = buffer.slice(0, newlineIndex);
-            buffer = buffer.slice(newlineIndex + 1);
-
-            if (line.endsWith('\r')) line = line.slice(0, -1);
-            if (line.startsWith(':') || line.trim() === '') continue;
-            if (!line.startsWith('data: ')) continue;
-
-            const jsonStr = line.slice(6).trim();
-            if (jsonStr === '[DONE]') break;
-
-            try {
-              const parsed = JSON.parse(jsonStr);
-              const content = parsed.choices?.[0]?.delta?.content;
-              if (content) {
-                assistantContent += content;
-                updateLastMessage(convId!, assistantContent);
-              }
-            } catch {}
-          }
-        }
+      // Determine API key for cloud providers
+      let apiKey: string | undefined;
+      if (selectedProvider === 'cloud-gemini' || selectedProvider === 'cloud-google' as any) {
+        apiKey = cloudApiKeys.google;
+      } else if (selectedProvider === 'cloud-gpt5' || selectedProvider === 'cloud-openai' as any) {
+        apiKey = cloudApiKeys.openai;
+      } else if (selectedProvider === 'cloud-anthropic' as any) {
+        apiKey = cloudApiKeys.anthropic;
       }
+
+      let assistantContent = "";
+
+      await streamAI({
+        provider: selectedProvider as any,
+        messages: messagesToSend,
+        apiKey,
+        temperature,
+        maxTokens,
+        systemPrompt: selectedPrompt?.content,
+        onToken: (token) => {
+          assistantContent += token;
+          updateLastMessage(convId!, assistantContent);
+        },
+        onError: (error) => {
+          updateLastMessage(convId!, `⚠️ ${error.message}`);
+          toast({
+            title: "Error",
+            description: error.message,
+            variant: "destructive",
+          });
+        },
+        onComplete: () => {
+          // Done
+        },
+      });
     } catch (error: any) {
       console.error('Chat error:', error);
       toast({
