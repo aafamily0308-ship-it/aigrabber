@@ -181,7 +181,7 @@ export async function executeTool(
   }
 }
 
-// Built-in plugins
+// Built-in plugins (only real, functional tools - no simulations)
 export const builtInPlugins: Plugin[] = [
   {
     metadata: {
@@ -289,7 +289,7 @@ export const builtInPlugins: Plugin[] = [
     },
     capabilities: [
       { type: 'function', name: 'wordCount', description: 'Count words in text' },
-      { type: 'function', name: 'summarize', description: 'Generate text summary' },
+      { type: 'function', name: 'transform', description: 'Transform text' },
     ],
     tools: [
       {
@@ -358,41 +358,41 @@ export const builtInPlugins: Plugin[] = [
   },
   {
     metadata: {
-      id: 'web-search',
-      name: 'Web Search',
+      id: 'system-info',
+      name: 'System Info',
       version: '1.0.0',
-      description: 'Search the web for information (simulated)',
-      category: 'integrations',
-      icon: '🔍',
+      description: 'Get browser and system information',
+      category: 'tools',
+      icon: '💻',
     },
     capabilities: [
-      { type: 'function', name: 'search', description: 'Search the web' },
+      { type: 'function', name: 'getSystemInfo', description: 'Get system information' },
     ],
     tools: [
       {
-        name: 'web_search',
-        description: 'Search the web for information (offline simulation)',
+        name: 'get_system_info',
+        description: 'Get current browser and system information',
         parameters: {
           type: 'object',
-          properties: {
-            query: {
-              type: 'string',
-              description: 'Search query',
-              required: true,
-            },
-            maxResults: {
-              type: 'number',
-              description: 'Maximum number of results (default: 5)',
-            },
-          },
-          required: ['query'],
+          properties: {},
         },
-        execute: async (args) => {
-          // Offline simulation - in real implementation would call search API
+        execute: async () => {
           return {
-            query: args.query,
-            note: 'Web search is simulated in offline mode',
-            suggestion: 'For real web search, connect to an online search API',
+            userAgent: navigator.userAgent,
+            platform: navigator.platform,
+            language: navigator.language,
+            languages: navigator.languages,
+            onLine: navigator.onLine,
+            cookieEnabled: navigator.cookieEnabled,
+            screenWidth: window.screen.width,
+            screenHeight: window.screen.height,
+            colorDepth: window.screen.colorDepth,
+            devicePixelRatio: window.devicePixelRatio,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            memory: (performance as any).memory ? {
+              usedJSHeapSize: (performance as any).memory.usedJSHeapSize,
+              totalJSHeapSize: (performance as any).memory.totalJSHeapSize,
+            } : 'Not available',
           };
         },
       },

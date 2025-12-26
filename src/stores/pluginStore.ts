@@ -44,7 +44,7 @@ export const usePluginStore = create<PluginState>()(
   persist(
     (set, get) => ({
       // Initial state
-      enabledPluginIds: ['datetime', 'calculator', 'text-utils', 'web-search'],
+      enabledPluginIds: ['datetime', 'calculator', 'text-utils', 'system-info'],
       customPlugins: [],
       mcpServers: [],
       autoConnectServers: [],
