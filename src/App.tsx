@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { MainLayout } from "@/components/layout/MainLayout";
 import Dashboard from "./pages/Dashboard";
 import Chat from "./pages/Chat";
+import Console from "./pages/Console";
 import Knowledge from "./pages/Knowledge";
 import Providers from "./pages/Providers";
 import Settings from "./pages/Settings";
@@ -15,12 +16,19 @@ import Plugins from "./pages/Plugins";
 import Maintenance from "./pages/Maintenance";
 import NotFound from "./pages/NotFound";
 import { useAutoCheck } from "@/hooks/useAutoCheck";
+import { useEffect } from "react";
+import { initHeadlessAPI } from "@/lib/headlessAPI";
 
 const queryClient = new QueryClient();
 
 // Auto-check wrapper component
 function AppWithAutoCheck({ children }: { children: React.ReactNode }) {
   useAutoCheck({ runOnMount: true, showToastOnIssues: true });
+  
+  useEffect(() => {
+    initHeadlessAPI();
+  }, []);
+  
   return <>{children}</>;
 }
 
@@ -34,8 +42,9 @@ const App = () => (
           <AppWithAutoCheck>
             <Routes>
               <Route element={<MainLayout />}>
-                <Route path="/" element={<Dashboard />} />
+              <Route path="/" element={<Dashboard />} />
                 <Route path="/chat" element={<Chat />} />
+                <Route path="/console" element={<Console />} />
                 <Route path="/knowledge" element={<Knowledge />} />
                 <Route path="/providers" element={<Providers />} />
                 <Route path="/prompts" element={<PromptsLibrary />} />
