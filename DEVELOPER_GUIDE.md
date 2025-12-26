@@ -513,6 +513,163 @@ OLLAMA_ORIGINS=* ollama serve
 
 ---
 
+## 🔌 Расширенная система провайдеров (v2.0)
+
+### Поддерживаемые провайдеры
+
+| ID | Название | Тип | Endpoint | API формат |
+|----|----------|-----|----------|------------|
+| `ollama` | Ollama | local | localhost:11434 | ollama |
+| `lmstudio` | LM Studio | local | localhost:1234 | openai |
+| `llamacpp` | llama.cpp | local | localhost:8080 | openai |
+| `koboldcpp` | KoboldCpp | local | localhost:5001 | koboldcpp |
+| `localai` | LocalAI | local | localhost:8080 | openai |
+| `textgenweb` | Text Gen WebUI | local | localhost:5000 | openai |
+| `vllm` | vLLM | local | localhost:8000 | openai |
+| `google` | Google Gemini | cloud | googleapis.com | google |
+| `openai` | OpenAI | cloud | api.openai.com | openai |
+| `anthropic` | Claude | cloud | api.anthropic.com | anthropic |
+
+### Добавление custom провайдера
+
+```typescript
+// src/lib/providers/myProvider.ts
+import { createProvider, streamOpenAICompatible } from './providerInterface';
+
+export const myProvider = createProvider({
+  id: 'myprovider',
+  name: 'My Provider',
+  type: 'local',
+  apiFormat: 'openai',
+  defaultEndpoint: 'http://localhost:9000',
+  defaultPort: 9000,
+  requiresApiKey: false,
+  
+  test: async (endpoint) => {
+    const res = await fetch(`${endpoint}/v1/models`);
+    return { online: res.ok, latency: 0 };
+  },
+  
+  stream: (options) => streamOpenAICompatible(options),
+  
+  getModels: async (endpoint) => ['model-1', 'model-2'],
+  
+  configFields: [
+    { key: 'endpoint', label: 'Endpoint', type: 'text', required: true }
+  ],
+});
+
+// Регистрация в providerRegistry.ts
+builtinProviders.set('myprovider', myProvider);
+```
+
+---
+
+## 🖥️ Консольный режим
+
+Доступен по `/console`. Терминальный интерфейс для работы с AI:
+
+```
+/help          - Список команд
+/status        - Статус всех провайдеров
+/provider <id> - Сменить провайдер
+/model <name>  - Сменить модель
+/clear         - Очистить историю
+/export        - Экспорт в буфер обмена
+/history [n]   - Последние n команд
+/theme         - Переключить тему
+/ping          - Тест соединения
+```
+
+Горячие клавиши:
+- `Ctrl+L` — очистить экран
+- `↑/↓` — навигация по истории
+- `Tab` — автодополнение команд
+
+---
+
+## 🔧 Headless API
+
+Доступ через `window.AiCommand` для программного управления:
+
+```javascript
+// Отправить сообщение
+const response = await window.AiCommand.chat("Привет!");
+
+// Стриминг с колбэком
+await window.AiCommand.stream("Напиши код", (token) => {
+  process.stdout.write(token);
+});
+
+// Управление провайдерами
+window.AiCommand.setProvider("ollama");
+window.AiCommand.setModel("llama3.2");
+window.AiCommand.getProviders(); // Список всех
+window.AiCommand.getProvider();  // Текущий
+
+// История
+window.AiCommand.getHistory();
+window.AiCommand.clearHistory();
+
+// Диагностика
+const ping = await window.AiCommand.ping("ollama"); 
+// { success: true, latency: 45 }
+```
+
+---
+
+## 🚨 Исправление сбоев
+
+### Приложение не запускается
+
+```bash
+# Очистить кэш
+rm -rf node_modules/.vite
+npm run dev
+
+# Переустановить зависимости
+rm -rf node_modules
+npm install
+```
+
+### Провайдер не подключается
+
+```bash
+# Проверить Ollama
+curl http://localhost:11434/api/tags
+
+# Проверить LM Studio
+curl http://localhost:1234/v1/models
+
+# Разрешить CORS для Ollama
+OLLAMA_ORIGINS="*" ollama serve
+```
+
+### Сброс состояния
+
+```javascript
+// В консоли браузера (F12)
+localStorage.clear();
+indexedDB.deleteDatabase('ai-command-center');
+indexedDB.deleteDatabase('ai-command-center-vectors');
+location.reload();
+```
+
+### Восстановление из бэкапа
+
+1. Перейти в Maintenance → Backups
+2. Выбрать бэкап → Restore
+3. Или импортировать JSON: Settings → Import Data
+
+### Диагностика системы
+
+1. Перейти на `/maintenance`
+2. Нажать "Run Health Checks"
+3. При проблемах — "Run Maintenance"
+4. aiBrain автоматически изолирует сбойные компоненты
+
+---
+
 ## 📝 Лицензия
 
 MIT License. Свободное использование и модификация.
