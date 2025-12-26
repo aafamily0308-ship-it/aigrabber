@@ -1,0 +1,317 @@
+# AI Command Center - Инструкция для ИИ
+
+## 📋 Обзор проекта
+
+**AI Command Center** — это продвинутая локальная AI платформа с поддержкой множества провайдеров (Ollama, LM Studio, llama.cpp, KoboldCpp, LocalAI, vLLM и облачных: OpenAI, Anthropic, Google), включающая RAG-систему, долгосрочную память, плагины и MCP-протокол.
+
+## 🏗️ Архитектура
+
+```
+src/
+├── lib/                      # Бизнес-логика и сервисы
+│   ├── providers/            # Система провайдеров (плагины)
+│   │   ├── providerInterface.ts   # Интерфейс AIProviderPlugin
+│   │   ├── providerRegistry.ts    # Регистрация и управление провайдерами
+│   │   ├── ollamaProvider.ts      # Ollama (localhost:11434)
+│   │   ├── lmstudioProvider.ts    # LM Studio (localhost:1234)
+│   │   ├── llamacppProvider.ts    # llama.cpp (localhost:8080)
+│   │   ├── koboldcppProvider.ts   # KoboldCpp (localhost:5001)
+│   │   ├── localaiProvider.ts     # LocalAI
+│   │   ├── textgenwebuiProvider.ts# Text Gen WebUI (localhost:5000)
+│   │   ├── vllmProvider.ts        # vLLM (localhost:8000)
+│   │   ├── openaiProvider.ts      # OpenAI API
+│   │   ├── anthropicProvider.ts   # Anthropic Claude
+│   │   ├── googleProvider.ts      # Google Gemini
+│   │   ├── customProvider.ts      # Фабрика пользовательских провайдеров
+│   │   └── index.ts               # Экспорты
+│   │
+│   ├── localAIClient.ts      # Унифицированный клиент для AI запросов (streamAI)
+│   ├── modelOrchestrator.ts  # Автоматический выбор модели по типу задачи
+│   ├── providerHealthMonitor.ts # Мониторинг здоровья провайдеров
+│   ├── contextManager.ts     # Управление контекстным окном
+│   │
+│   ├── embeddingService.ts   # TF-IDF эмбеддинги (офлайн)
+│   ├── vectorStore.ts        # IndexedDB хранилище векторов
+│   ├── ragPipeline.ts        # RAG-пайплайн (retrieval-augmented generation)
+│   ├── conversationMemory.ts # Долгосрочная память разговоров
+│   │
+│   ├── aiBrain.ts            # "Мозг" системы с circuit breaker и самовосстановлением
+│   ├── systemIntegrity.ts    # Проверка целостности системы
+│   ├── stressTest.ts         # Стресс-тестирование
+│   ├── maintenanceSystem.ts  # Система обслуживания
+│   │
+│   ├── pluginSystem.ts       # Система плагинов
+│   ├── mcpClient.ts          # Model Context Protocol клиент
+│   ├── toolExecutor.ts       # Выполнение инструментов
+│   │
+│   ├── documentParser.ts     # Парсинг документов (PDF, DOCX и др.)
+│   ├── sensitiveDetector.ts  # Детектор чувствительных данных
+│   ├── responseProcessor.ts  # Обработка ответов AI
+│   ├── dataManager.ts        # Управление данными
+│   ├── indexedDBStore.ts     # IndexedDB обёртка
+│   │
+│   ├── consoleMode.ts        # Консольный режим (команды)
+│   └── headlessAPI.ts        # Headless API (window.AiCommand)
+│
+├── stores/                   # Zustand хранилища состояния
+│   ├── providerStore.ts      # Состояние провайдеров (10 провайдеров)
+│   ├── chatStore.ts          # Состояние чата (conversations, messages)
+│   ├── settingsStore.ts      # Настройки (API ключи, temperature и др.)
+│   ├── knowledgeStore.ts     # База знаний (документы)
+│   ├── promptsStore.ts       # Библиотека промптов
+│   ├── pluginStore.ts        # Состояние плагинов
+│   ├── auditStore.ts         # Аудит-лог
+│   └── maintenanceStore.ts   # Состояние обслуживания
+│
+├── pages/                    # Страницы приложения
+│   ├── Dashboard.tsx         # Главная панель
+│   ├── Chat.tsx              # Основной чат с AI
+│   ├── Console.tsx           # Консольный/терминальный режим
+│   ├── Knowledge.tsx         # База знаний
+│   ├── Providers.tsx         # Управление провайдерами
+│   ├── Plugins.tsx           # Плагины и MCP
+│   ├── PromptsLibrary.tsx    # Библиотека промптов
+│   ├── Settings.tsx          # Настройки
+│   ├── Maintenance.tsx       # Обслуживание системы
+│   └── AuditLog.tsx          # Журнал аудита
+│
+├── components/               # React компоненты
+│   ├── layout/               # Макет (Sidebar, MainLayout)
+│   ├── chat/                 # Чат компоненты
+│   ├── dashboard/            # Dashboard компоненты
+│   └── ui/                   # Shadcn/UI компоненты
+│
+└── hooks/                    # React хуки
+    ├── useNetworkStatus.ts   # Статус сети
+    ├── useSpeechToText.ts    # Голосовой ввод
+    └── useAutoCheck.ts       # Автоматическая проверка
+```
+
+## 🔌 Система провайдеров
+
+### Интерфейс провайдера (AIProviderPlugin)
+
+```typescript
+interface AIProviderPlugin {
+  id: string;                          // Уникальный ID
+  name: string;                        // Отображаемое имя
+  type: 'local' | 'cloud' | 'custom';  // Тип
+  apiFormat: 'openai' | 'ollama' | 'anthropic' | 'google' | 'koboldcpp' | 'custom';
+  defaultEndpoint: string;             // URL по умолчанию
+  defaultPort: number;
+  requiresApiKey: boolean;
+  
+  test: (endpoint, apiKey?) => Promise<TestResult>;        // Тест соединения
+  stream: (options: StreamOptions) => Promise<void>;       // Стриминг ответа
+  getModels: (endpoint, apiKey?) => Promise<string[]>;     // Список моделей
+  
+  configFields: ConfigField[];         // Поля настройки для UI
+}
+```
+
+### ID провайдеров
+
+| ID          | Имя                  | Тип   | Endpoint по умолчанию |
+|-------------|----------------------|-------|----------------------|
+| ollama      | Ollama               | local | http://localhost:11434 |
+| lmstudio    | LM Studio            | local | http://localhost:1234 |
+| llamacpp    | llama.cpp Server     | local | http://localhost:8080 |
+| koboldcpp   | KoboldCpp            | local | http://localhost:5001 |
+| localai     | LocalAI              | local | http://localhost:8080 |
+| textgenweb  | Text Generation WebUI| local | http://localhost:5000 |
+| vllm        | vLLM                 | local | http://localhost:8000 |
+| google      | Google AI (Gemini)   | cloud | https://generativelanguage.googleapis.com |
+| openai      | OpenAI               | cloud | https://api.openai.com |
+| anthropic   | Anthropic (Claude)   | cloud | https://api.anthropic.com |
+
+## 📦 Zustand Stores
+
+### providerStore.ts
+```typescript
+interface Provider {
+  id: string;
+  name: string;
+  type: 'local' | 'cloud';
+  endpoint: string;
+  isActive: boolean;
+  status: 'online' | 'offline' | 'checking';
+  latency?: number;
+  model?: string;
+  priority: number;
+  apiKey?: string;
+}
+
+// Actions:
+updateProviderStatus(id, status, latency?)
+toggleProvider(id)
+updateProviderEndpoint(id, endpoint)
+updateProviderModel(id, model)
+addProvider(provider)
+removeProvider(id)
+getActiveProvider()
+getOnlineProviders()
+```
+
+### chatStore.ts
+```typescript
+type ProviderType = 'ollama' | 'lmstudio' | 'llamacpp' | 'koboldcpp' | 'localai' | 'textgenweb' | 'vllm' | 'google' | 'openai' | 'anthropic' | 'custom';
+
+interface Message {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  provider?: ProviderType;
+  timestamp: Date;
+  tokensUsed?: number;
+}
+
+interface Conversation {
+  id: string;
+  title: string;
+  messages: Message[];
+  provider: ProviderType;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// Actions:
+createConversation() → string
+setActiveConversation(id)
+addMessage(conversationId, message)
+updateLastMessage(conversationId, content)
+deleteConversation(id)
+clearConversations()
+```
+
+## 🧠 Ключевые модули
+
+### localAIClient.ts
+Основной клиент для AI запросов:
+```typescript
+streamAI(options: AIRequestOptions) → Promise<void>
+testProvider(provider, apiKey?) → Promise<{ success, message }>
+```
+
+### modelOrchestrator.ts
+Автоматический выбор модели:
+```typescript
+detectTaskType(message) → TaskType  // 'code' | 'creative' | 'analysis' | ...
+orchestrate(message, history, providers, config) → {
+  selectedProvider,
+  taskType,
+  fallbackChain,
+  reasoning
+}
+```
+
+### ragPipeline.ts
+RAG система:
+```typescript
+indexDocument(document) → { chunksCreated, success }
+searchDocuments(query, options) → SearchResult[]
+ragAugment(query, conversationId, config) → {
+  augmentedQuery,
+  context,
+  hasContext
+}
+```
+
+### embeddingService.ts
+Офлайн эмбеддинги (TF-IDF + char n-grams):
+```typescript
+generateEmbedding(text) → EmbeddingVector
+cosineSimilarity(a, b) → number
+chunkText(text, chunkSize, overlap) → string[]
+```
+
+### aiBrain.ts
+"Мозг" системы с circuit breaker:
+```typescript
+aiBrain.diagnose(useAI?) → DiagnosisResult
+aiBrain.repair() → RepairResult
+aiBrain.isolateComponent(id)
+aiBrain.enterSafeMode()
+```
+
+## 🖥️ Консольный режим
+
+Доступен по `/console`:
+- `/help` — список команд
+- `/status` — статус провайдеров
+- `/provider <id>` — сменить провайдер
+- `/model <name>` — сменить модель
+- `/clear` — очистить историю
+- `/export` — экспорт истории
+
+## 🔧 Headless API
+
+Доступен через `window.AiCommand`:
+```javascript
+await AiCommand.chat("message") → string
+await AiCommand.stream("message", onToken) → string
+AiCommand.setProvider("ollama") → boolean
+AiCommand.setModel("llama3.2")
+AiCommand.getProviders() → Provider[]
+AiCommand.getHistory() → Message[]
+AiCommand.clearHistory()
+await AiCommand.ping("ollama") → { success, latency }
+```
+
+## 🔄 Поток данных
+
+```
+User Message
+    ↓
+Chat.tsx (UI)
+    ↓
+modelOrchestrator (выбор провайдера)
+    ↓
+ragPipeline (добавление контекста из базы знаний)
+    ↓
+contextManager (оптимизация контекстного окна)
+    ↓
+localAIClient.streamAI()
+    ↓
+providerRegistry.get(providerId).stream()
+    ↓
+AI Provider (Ollama/LM Studio/OpenAI/etc.)
+    ↓
+Response tokens → updateLastMessage()
+    ↓
+conversationMemory.storeMemory() (сохранение в память)
+```
+
+## 📁 Хранение данных
+
+- **IndexedDB**: Векторы (эмбеддинги), документы
+- **localStorage**: Состояния Zustand stores (persist middleware)
+- **Zustand**: Runtime состояние
+
+## ⚠️ Важные замечания
+
+1. **Провайдеры используют новые ID** (ollama, lmstudio, google) — НЕ старые (local-ollama, cloud-gemini)
+2. **localAIClient** нормализует старые ID в новые через `normalizeProvider()`
+3. **providerStore** имеет миграцию версий для добавления новых провайдеров
+4. **Все AI запросы** проходят через `streamAI()` из localAIClient
+5. **RAG работает офлайн** через TF-IDF эмбеддинги, не требует внешних API
+6. **aiBrain** использует circuit breaker для изоляции сбойных компонентов
+
+## 🛠️ Расширение
+
+### Добавление нового провайдера:
+1. Создать файл `src/lib/providers/myProvider.ts`
+2. Реализовать интерфейс `AIProviderPlugin`
+3. Зарегистрировать в `providerRegistry.ts`
+4. Добавить в `providerStore.ts` defaultProviders
+5. Добавить в `modelOrchestrator.ts` modelRegistry
+
+### Добавление новой команды консоли:
+```typescript
+// src/lib/consoleMode.ts
+consoleCommands.set('mycommand', {
+  name: 'mycommand',
+  description: 'Описание',
+  usage: '/mycommand [args]',
+  execute: (args, context) => 'Результат',
+});
+```
