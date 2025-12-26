@@ -7,7 +7,9 @@ import {
   Settings,
   Bot,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  History,
+  FileText
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -16,7 +18,9 @@ const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
   { to: "/chat", icon: MessageSquare, label: "AI Chat" },
   { to: "/knowledge", icon: BookOpen, label: "Knowledge Base" },
+  { to: "/prompts", icon: FileText, label: "Prompts" },
   { to: "/providers", icon: Server, label: "Providers" },
+  { to: "/audit", icon: History, label: "Audit Log" },
   { to: "/settings", icon: Settings, label: "Settings" },
 ];
 
@@ -44,7 +48,7 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 py-4 px-2 space-y-1">
+      <nav className="flex-1 py-4 px-2 space-y-1 overflow-y-auto scrollbar-thin">
         {navItems.map((item) => (
           <NavLink
             key={item.to}
@@ -80,7 +84,7 @@ export function Sidebar() {
       <div className="p-4 border-t border-sidebar-border">
         {!collapsed && (
           <div className="text-xs text-muted-foreground">
-            <p>Version 1.0.0</p>
+            <p>Version 2.0.0</p>
           </div>
         )}
       </div>
