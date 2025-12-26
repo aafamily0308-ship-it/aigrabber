@@ -10,7 +10,8 @@ import {
   ChevronRight,
   History,
   FileText,
-  Puzzle
+  Puzzle,
+  Wrench
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -21,6 +22,7 @@ const navItems = [
   { to: "/knowledge", icon: BookOpen, label: "Knowledge Base" },
   { to: "/prompts", icon: FileText, label: "Prompts" },
   { to: "/plugins", icon: Puzzle, label: "Plugins & MCP" },
+  { to: "/maintenance", icon: Wrench, label: "Maintenance" },
   { to: "/providers", icon: Server, label: "Providers" },
   { to: "/audit", icon: History, label: "Audit Log" },
   { to: "/settings", icon: Settings, label: "Settings" },

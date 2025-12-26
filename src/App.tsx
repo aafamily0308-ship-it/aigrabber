@@ -12,6 +12,7 @@ import Settings from "./pages/Settings";
 import AuditLog from "./pages/AuditLog";
 import PromptsLibrary from "./pages/PromptsLibrary";
 import Plugins from "./pages/Plugins";
+import Maintenance from "./pages/Maintenance";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -31,6 +32,7 @@ const App = () => (
               <Route path="/providers" element={<Providers />} />
               <Route path="/prompts" element={<PromptsLibrary />} />
               <Route path="/plugins" element={<Plugins />} />
+              <Route path="/maintenance" element={<Maintenance />} />
               <Route path="/audit" element={<AuditLog />} />
               <Route path="/settings" element={<Settings />} />
             </Route>
