@@ -11,27 +11,26 @@ import { Badge } from "@/components/ui/badge";
 import { 
   checkAllProviders, 
   getHealthSummary, 
-  getAllProviderHealth,
   ProviderHealth,
+  ProviderId,
 } from "@/lib/providerHealthMonitor";
-import { getProviderDisplayName, AIProvider } from "@/lib/localAIClient";
-import { useSettingsStore } from "@/stores/settingsStore";
+import { useProviderStore } from "@/stores/providerStore";
 
 interface ProviderHealthIndicatorProps {
   className?: string;
 }
 
 export function ProviderHealthIndicator({ className }: ProviderHealthIndicatorProps) {
-  const [healthMap, setHealthMap] = useState<Map<AIProvider, ProviderHealth>>(new Map());
+  const [healthMap, setHealthMap] = useState<Map<ProviderId, ProviderHealth>>(new Map());
   const [isChecking, setIsChecking] = useState(false);
-  const { cloudApiKeys } = useSettingsStore();
+  const { providers } = useProviderStore();
 
   const summary = getHealthSummary();
 
   const runHealthCheck = async () => {
     setIsChecking(true);
     try {
-      const result = await checkAllProviders(cloudApiKeys);
+      const result = await checkAllProviders();
       setHealthMap(new Map(result));
     } finally {
       setIsChecking(false);
@@ -39,13 +38,11 @@ export function ProviderHealthIndicator({ className }: ProviderHealthIndicatorPr
   };
 
   useEffect(() => {
-    // Initial check
     runHealthCheck();
     
-    // Check every 60 seconds
     const interval = setInterval(runHealthCheck, 60000);
     return () => clearInterval(interval);
-  }, [cloudApiKeys]);
+  }, []);
 
   const getStatusIcon = (status: ProviderHealth['status']) => {
     switch (status) {
@@ -73,9 +70,14 @@ export function ProviderHealthIndicator({ className }: ProviderHealthIndicatorPr
     }
   };
 
+  const getProviderName = (id: ProviderId): string => {
+    const provider = providers.find(p => p.id === id);
+    return provider?.name || id;
+  };
+
   const healthArray = Array.from(healthMap.entries());
   const onlineCount = healthArray.filter(([_, h]) => h.status === 'online').length;
-  const totalCount = healthArray.length || 5;
+  const totalCount = healthArray.length || providers.length;
 
   return (
     <Popover>
@@ -123,15 +125,15 @@ export function ProviderHealthIndicator({ className }: ProviderHealthIndicatorPr
                 No providers checked yet...
               </p>
             ) : (
-              healthArray.map(([provider, health]) => (
+              healthArray.map(([providerId, health]) => (
                 <div
-                  key={provider}
+                  key={providerId}
                   className="flex items-center justify-between p-2 rounded-lg bg-muted/30"
                 >
                   <div className="flex items-center gap-2">
                     {getStatusIcon(health.status)}
                     <span className="text-sm font-medium">
-                      {getProviderDisplayName(provider)}
+                      {getProviderName(providerId)}
                     </span>
                   </div>
                   <div className="flex items-center gap-2">

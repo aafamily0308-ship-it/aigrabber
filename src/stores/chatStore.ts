@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 export type MessageRole = 'user' | 'assistant' | 'system';
-export type ProviderType = 'local-ollama' | 'local-lmstudio' | 'cloud-gemini' | 'cloud-gpt5';
+export type ProviderType = 'ollama' | 'lmstudio' | 'llamacpp' | 'koboldcpp' | 'localai' | 'textgenweb' | 'vllm' | 'google' | 'openai' | 'anthropic' | 'custom';
 
 export interface Message {
   id: string;
@@ -45,7 +45,7 @@ export const useChatStore = create<ChatState>()(
       conversations: [],
       activeConversationId: null,
       isStreaming: false,
-      selectedProvider: 'cloud-gemini',
+      selectedProvider: 'ollama',
 
       createConversation: () => {
         const id = crypto.randomUUID();

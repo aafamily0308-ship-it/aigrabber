@@ -11,6 +11,8 @@ export interface Provider {
   latency?: number;
   model?: string;
   priority: number;
+  apiKey?: string;
+  requiresApiKey?: boolean;
 }
 
 interface ProviderState {
@@ -21,19 +23,26 @@ interface ProviderState {
   toggleProvider: (id: string) => void;
   updateProviderEndpoint: (id: string, endpoint: string) => void;
   updateProviderModel: (id: string, model: string) => void;
+  updateProviderApiKey: (id: string, apiKey: string) => void;
+  addProvider: (provider: Provider) => void;
+  removeProvider: (id: string) => void;
   reorderProviders: (providers: Provider[]) => void;
+  getActiveProvider: () => Provider | undefined;
+  getOnlineProviders: () => Provider[];
 }
 
 const defaultProviders: Provider[] = [
+  // Local Providers
   {
     id: 'ollama',
     name: 'Ollama',
     type: 'local',
     endpoint: 'http://localhost:11434',
     isActive: true,
-    status: 'offline', // Default offline until checked
+    status: 'offline',
     model: 'llama3.2',
     priority: 1,
+    requiresApiKey: false,
   },
   {
     id: 'lmstudio',
@@ -41,45 +50,105 @@ const defaultProviders: Provider[] = [
     type: 'local',
     endpoint: 'http://localhost:1234',
     isActive: true,
-    status: 'offline', // Default offline until checked
+    status: 'offline',
     model: 'local-model',
     priority: 2,
+    requiresApiKey: false,
   },
   {
-    id: 'gemini',
-    name: 'Gemini Pro',
+    id: 'llamacpp',
+    name: 'llama.cpp Server',
+    type: 'local',
+    endpoint: 'http://localhost:8080',
+    isActive: false,
+    status: 'offline',
+    model: 'default',
+    priority: 3,
+    requiresApiKey: false,
+  },
+  {
+    id: 'koboldcpp',
+    name: 'KoboldCpp',
+    type: 'local',
+    endpoint: 'http://localhost:5001',
+    isActive: false,
+    status: 'offline',
+    model: 'kobold',
+    priority: 4,
+    requiresApiKey: false,
+  },
+  {
+    id: 'localai',
+    name: 'LocalAI',
+    type: 'local',
+    endpoint: 'http://localhost:8080',
+    isActive: false,
+    status: 'offline',
+    model: 'gpt-4',
+    priority: 5,
+    requiresApiKey: false,
+  },
+  {
+    id: 'textgenweb',
+    name: 'Text Generation WebUI',
+    type: 'local',
+    endpoint: 'http://localhost:5000',
+    isActive: false,
+    status: 'offline',
+    model: 'default',
+    priority: 6,
+    requiresApiKey: false,
+  },
+  {
+    id: 'vllm',
+    name: 'vLLM',
+    type: 'local',
+    endpoint: 'http://localhost:8000',
+    isActive: false,
+    status: 'offline',
+    model: 'default',
+    priority: 7,
+    requiresApiKey: false,
+  },
+  // Cloud Providers
+  {
+    id: 'google',
+    name: 'Google AI (Gemini)',
     type: 'cloud',
     endpoint: 'https://generativelanguage.googleapis.com',
     isActive: true,
-    status: 'offline', // Offline until API key is provided
-    model: 'gemini-pro',
-    priority: 3,
+    status: 'offline',
+    model: 'gemini-2.0-flash',
+    priority: 8,
+    requiresApiKey: true,
   },
   {
     id: 'openai',
-    name: 'GPT-4o',
+    name: 'OpenAI (GPT-4o)',
     type: 'cloud',
     endpoint: 'https://api.openai.com',
     isActive: true,
-    status: 'offline', // Offline until API key is provided
+    status: 'offline',
     model: 'gpt-4o',
-    priority: 4,
+    priority: 9,
+    requiresApiKey: true,
   },
   {
     id: 'anthropic',
-    name: 'Claude 3',
+    name: 'Anthropic (Claude)',
     type: 'cloud',
     endpoint: 'https://api.anthropic.com',
     isActive: true,
-    status: 'offline', // Offline until API key is provided
-    model: 'claude-3-sonnet-20240229',
-    priority: 5,
+    status: 'offline',
+    model: 'claude-sonnet-4-20250514',
+    priority: 10,
+    requiresApiKey: true,
   },
 ];
 
 export const useProviderStore = create<ProviderState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       providers: defaultProviders,
 
       updateProviderStatus: (id, status, latency) =>
@@ -110,10 +179,54 @@ export const useProviderStore = create<ProviderState>()(
           ),
         })),
 
+      updateProviderApiKey: (id, apiKey) =>
+        set((state) => ({
+          providers: state.providers.map((p) =>
+            p.id === id ? { ...p, apiKey } : p
+          ),
+        })),
+
+      addProvider: (provider) =>
+        set((state) => {
+          if (state.providers.some(p => p.id === provider.id)) {
+            return state;
+          }
+          return { providers: [...state.providers, provider] };
+        }),
+
+      removeProvider: (id) =>
+        set((state) => ({
+          providers: state.providers.filter((p) => p.id !== id),
+        })),
+
       reorderProviders: (providers) => set({ providers }),
+
+      getActiveProvider: () => {
+        const state = get();
+        return state.providers.find(p => p.isActive && p.status === 'online');
+      },
+
+      getOnlineProviders: () => {
+        const state = get();
+        return state.providers.filter(p => p.status === 'online');
+      },
     }),
     {
       name: 'ai-command-providers',
+      version: 2,
+      migrate: (persistedState: unknown, version: number) => {
+        if (version < 2) {
+          // Migration: add new providers if missing
+          const state = persistedState as { providers: Provider[] };
+          const existingIds = new Set(state.providers.map(p => p.id));
+          const missingProviders = defaultProviders.filter(p => !existingIds.has(p.id));
+          return {
+            ...state,
+            providers: [...state.providers, ...missingProviders],
+          };
+        }
+        return persistedState;
+      },
     }
   )
 );

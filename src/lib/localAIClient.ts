@@ -2,6 +2,17 @@
 // Supports: Ollama, LM Studio, OpenAI, Google AI, Anthropic
 
 export type AIProvider = 
+  | 'ollama' 
+  | 'lmstudio' 
+  | 'llamacpp'
+  | 'koboldcpp'
+  | 'localai'
+  | 'textgenweb'
+  | 'vllm'
+  | 'openai' 
+  | 'google' 
+  | 'anthropic'
+  // Legacy aliases
   | 'local-ollama' 
   | 'local-lmstudio' 
   | 'cloud-openai' 
@@ -87,9 +98,16 @@ export function needsApiKey(provider: AIProvider): boolean {
 
 // Map legacy provider names to new ones
 function normalizeProvider(provider: AIProvider): AIProvider {
-  if (provider === 'cloud-gemini') return 'cloud-google';
-  if (provider === 'cloud-gpt5') return 'cloud-openai';
-  return provider;
+  const mapping: Record<string, AIProvider> = {
+    'cloud-gemini': 'google',
+    'cloud-gpt5': 'openai',
+    'cloud-google': 'google',
+    'cloud-openai': 'openai',
+    'cloud-anthropic': 'anthropic',
+    'local-ollama': 'ollama',
+    'local-lmstudio': 'lmstudio',
+  };
+  return mapping[provider] || provider;
 }
 
 // Stream AI response from Ollama
@@ -450,16 +468,23 @@ export async function streamAI(options: AIRequestOptions): Promise<void> {
   const provider = normalizeProvider(options.provider);
 
   switch (provider) {
-    case 'local-ollama':
+    case 'ollama':
       return streamOllama(options);
-    case 'local-lmstudio':
+    case 'lmstudio':
+    case 'llamacpp':
+    case 'localai':
+    case 'textgenweb':
+    case 'vllm':
       return streamLMStudio(options);
-    case 'cloud-openai':
+    case 'openai':
       return streamOpenAI(options);
-    case 'cloud-google':
+    case 'google':
       return streamGoogle(options);
-    case 'cloud-anthropic':
+    case 'anthropic':
       return streamAnthropic(options);
+    case 'koboldcpp':
+      // KoboldCpp uses a different format, fallback to LMStudio-style
+      return streamLMStudio(options);
     default:
       options.onError?.(new Error(`Unknown provider: ${provider}`));
   }
@@ -545,14 +570,24 @@ export async function testProvider(provider: AIProvider, apiKey?: string): Promi
 
 // Get provider display name
 export function getProviderDisplayName(provider: AIProvider): string {
-  const names: Record<AIProvider, string> = {
-    'local-ollama': 'Ollama (Local)',
-    'local-lmstudio': 'LM Studio (Local)',
-    'cloud-openai': 'OpenAI (GPT-4o)',
-    'cloud-google': 'Google AI (Gemini)',
-    'cloud-anthropic': 'Anthropic (Claude)',
-    'cloud-gemini': 'Google AI (Gemini)',
-    'cloud-gpt5': 'OpenAI (GPT-4o)',
+  const names: Partial<Record<AIProvider, string>> = {
+    'ollama': 'Ollama',
+    'lmstudio': 'LM Studio',
+    'llamacpp': 'llama.cpp',
+    'koboldcpp': 'KoboldCpp',
+    'localai': 'LocalAI',
+    'textgenweb': 'Text Gen WebUI',
+    'vllm': 'vLLM',
+    'openai': 'OpenAI',
+    'google': 'Google AI',
+    'anthropic': 'Anthropic',
+    'local-ollama': 'Ollama',
+    'local-lmstudio': 'LM Studio',
+    'cloud-openai': 'OpenAI',
+    'cloud-google': 'Google AI',
+    'cloud-anthropic': 'Anthropic',
+    'cloud-gemini': 'Google AI',
+    'cloud-gpt5': 'OpenAI',
   };
   return names[provider] || provider;
 }
