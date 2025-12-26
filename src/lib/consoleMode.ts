@@ -273,6 +273,126 @@ ${activeProviders.map(p => `  ${p.status === 'online' ? '🟢' : '🔴'} ${p.nam
 📊 RAG Pipeline + Vector Store`;
     },
   }],
+  
+  ['audit', {
+    name: 'audit',
+    description: 'Полный аудит системы',
+    usage: '/audit',
+    execute: async () => {
+      const { useProviderStore } = await import('@/stores/providerStore');
+      const { useSettingsStore } = await import('@/stores/settingsStore');
+      const { useChatStore } = await import('@/stores/chatStore');
+      const { usePluginStore } = await import('@/stores/pluginStore');
+      const { getSearchServiceStatus } = await import('@/lib/webSearchService');
+      
+      const providers = useProviderStore.getState().providers;
+      const settings = useSettingsStore.getState();
+      const conversations = useChatStore.getState().conversations;
+      const enabledPluginIds = usePluginStore.getState().enabledPluginIds;
+      
+      const activeProviders = providers.filter(p => p.isActive);
+      const onlineProviders = providers.filter(p => p.status === 'online');
+      const totalMessages = conversations.reduce((sum, c) => sum + c.messages.length, 0);
+      
+      // Проверка IndexedDB
+      let indexedDBStatus = '❌ Недоступен';
+      try {
+        const dbs = await indexedDB.databases();
+        const hasDB = dbs.some(db => db.name?.includes('ai-command'));
+        indexedDBStatus = hasDB ? '✅ Работает' : '⚠️ Пустая база';
+      } catch {
+        indexedDBStatus = '❌ Ошибка доступа';
+      }
+      
+      // Проверка localStorage
+      let localStorageStatus = '❌ Недоступен';
+      try {
+        const keys = Object.keys(localStorage).filter(k => k.includes('ai-command'));
+        localStorageStatus = keys.length > 0 ? `✅ ${keys.length} ключей` : '⚠️ Пусто';
+      } catch {
+        localStorageStatus = '❌ Ошибка доступа';
+      }
+      
+      // Проверка веб-поиска
+      let webSearchStatus = '⏳ Проверка...';
+      try {
+        const searchStatus = await getSearchServiceStatus();
+        if (searchStatus.available) {
+          const methods: string[] = [];
+          if (searchStatus.searxng) methods.push('SearXNG');
+          if (searchStatus.proxy) methods.push('Proxy');
+          webSearchStatus = `✅ Доступен (${methods.join(', ')})`;
+        } else {
+          webSearchStatus = '❌ Недоступен';
+        }
+      } catch {
+        webSearchStatus = '⚠️ Не удалось проверить';
+      }
+      
+      // Проверка памяти
+      let memoryStatus = 'N/A';
+      if ('memory' in performance) {
+        const mem = (performance as any).memory;
+        const usedMB = Math.round(mem.usedJSHeapSize / 1024 / 1024);
+        const totalMB = Math.round(mem.jsHeapSizeLimit / 1024 / 1024);
+        memoryStatus = `${usedMB}MB / ${totalMB}MB`;
+      }
+      
+      return `🔍 ПОЛНЫЙ АУДИТ СИСТЕМЫ
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📊 ПРОВАЙДЕРЫ AI
+  Активные: ${activeProviders.length}
+  Онлайн: ${onlineProviders.length}
+  ${onlineProviders.map(p => `  🟢 ${p.name} (${p.latency || '?'}ms)`).join('\n') || '  Нет онлайн провайдеров'}
+
+💾 ХРАНИЛИЩЕ
+  IndexedDB: ${indexedDBStatus}
+  LocalStorage: ${localStorageStatus}
+  Память: ${memoryStatus}
+
+💬 ДАННЫЕ
+  Сообщений: ${totalMessages}
+  Разговоров: ${conversations.length}
+  Плагинов: ${enabledPluginIds.length} активно
+
+🌐 ВЕБ-ПОИСК
+  Статус: ${webSearchStatus}
+
+⚙️ НАСТРОЙКИ
+  Temperature: ${settings.temperature}
+  Max Tokens: ${settings.maxTokens}
+  Тема: ${settings.theme}
+
+🔑 API КЛЮЧИ
+  OpenAI: ${settings.cloudApiKeys?.openai ? '✅' : '❌'}
+  Google: ${settings.cloudApiKeys?.google ? '✅' : '❌'}
+  Anthropic: ${settings.cloudApiKeys?.anthropic ? '✅' : '❌'}
+
+📅 Время аудита: ${new Date().toLocaleString()}`;
+    },
+  }],
+  
+  ['search', {
+    name: 'search',
+    description: 'Веб-поиск',
+    usage: '/search <запрос>',
+    execute: async (args) => {
+      if (args.length === 0) {
+        return '❌ Использование: /search <запрос>\n\nПример: /search React hooks tutorial';
+      }
+      
+      const { webSearch, formatSearchResultsForAI } = await import('@/lib/webSearchService');
+      const query = args.join(' ');
+      
+      try {
+        const results = await webSearch(query, { maxResults: 5 });
+        return formatSearchResultsForAI(results);
+      } catch (error: any) {
+        return `❌ Ошибка поиска: ${error.message}`;
+      }
+    },
+  }],
 ]);
 
 // Parse command from input
