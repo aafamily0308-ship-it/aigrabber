@@ -4,6 +4,13 @@ import { persist } from 'zustand/middleware';
 export type ThemeMode = 'dark' | 'light' | 'system';
 export type AccentColor = 'cyan' | 'purple' | 'green' | 'orange' | 'pink' | 'blue';
 
+// Cloud API Keys for direct access (stored locally, not sent to Lovable)
+export interface CloudApiKeys {
+  openai?: string;
+  google?: string;
+  anthropic?: string;
+}
+
 export interface SettingsProfile {
   id: string;
   name: string;
@@ -35,6 +42,9 @@ interface SettingsState {
     enabled: boolean;
   }[];
   
+  // Cloud API Keys (for offline mode with cloud AI)
+  cloudApiKeys: CloudApiKeys;
+  
   // Profiles
   profiles: SettingsProfile[];
   
@@ -48,6 +58,8 @@ interface SettingsState {
   setMaxTokens: (tokens: number) => void;
   setTopP: (topP: number) => void;
   setSmartRouter: (enabled: boolean) => void;
+  setCloudApiKey: (provider: keyof CloudApiKeys, key: string) => void;
+  removeCloudApiKey: (provider: keyof CloudApiKeys) => void;
   addProfile: (profile: Omit<SettingsProfile, 'id' | 'createdAt'>) => string;
   deleteProfile: (id: string) => void;
   applyProfile: (id: string) => void;
@@ -69,6 +81,7 @@ export const useSettingsStore = create<SettingsState>()(
         { id: '1', condition: 'code', provider: 'local-ollama', enabled: true },
         { id: '2', condition: 'long context', provider: 'cloud-gemini', enabled: true },
       ],
+      cloudApiKeys: {},
       profiles: [],
 
       setTheme: (theme) => {
@@ -107,6 +120,18 @@ export const useSettingsStore = create<SettingsState>()(
       setMaxTokens: (maxTokens) => set({ maxTokens }),
       setTopP: (topP) => set({ topP }),
       setSmartRouter: (smartRouter) => set({ smartRouter }),
+
+      setCloudApiKey: (provider, key) =>
+        set((state) => ({
+          cloudApiKeys: { ...state.cloudApiKeys, [provider]: key },
+        })),
+
+      removeCloudApiKey: (provider) =>
+        set((state) => {
+          const newKeys = { ...state.cloudApiKeys };
+          delete newKeys[provider];
+          return { cloudApiKeys: newKeys };
+        }),
 
       addProfile: (profile) => {
         const id = crypto.randomUUID();
