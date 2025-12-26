@@ -38,6 +38,8 @@ import { ContextStatsDisplay } from "@/components/ContextStatsDisplay";
 import { orchestrate } from "@/lib/modelOrchestrator";
 import { buildContextWindow, ContextMessage, getContextStats } from "@/lib/contextManager";
 import { getOnlineProviders } from "@/lib/providerHealthMonitor";
+import { ragAugment, indexDocument } from "@/lib/ragPipeline";
+import { storeMemory } from "@/lib/conversationMemory";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -71,7 +73,9 @@ export default function Chat() {
   const [showDataPreview, setShowDataPreview] = useState(false);
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
   const [autoSelectProvider, setAutoSelectProvider] = useState(true);
+  const [useRAG, setUseRAG] = useState(true);
   const [lastOrchestration, setLastOrchestration] = useState<{ taskType: string; reasoning: string } | null>(null);
+  const [ragSources, setRagSources] = useState<number>(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   
@@ -204,6 +208,7 @@ export default function Chat() {
   const sendMessage = async (userMessage: string) => {
     setInput("");
     setPendingMessage(null);
+    setRagSources(0);
 
     let convId = activeConversationId;
     if (!convId) {
@@ -212,7 +217,26 @@ export default function Chat() {
 
     // Add document context if attached
     const docContext = buildContextFromDocs();
-    const fullMessage = userMessage + docContext;
+    let fullMessage = userMessage + docContext;
+
+    // Apply RAG augmentation if enabled
+    if (useRAG && documents.length > 0) {
+      try {
+        const ragResult = await ragAugment(userMessage, convId, {
+          maxDocumentChunks: 3,
+          maxMemories: 2,
+          includeMemory: true,
+          includePersonalization: true,
+        });
+        
+        if (ragResult.hasContext) {
+          fullMessage = ragResult.augmentedQuery + docContext;
+          setRagSources(ragResult.context.totalSources);
+        }
+      } catch (error) {
+        console.warn('RAG augmentation failed:', error);
+      }
+    }
 
     // Determine provider - use orchestrator if auto-select is enabled
     let providerToUse = selectedProvider;
@@ -251,6 +275,9 @@ export default function Chat() {
     addMessage(convId, { role: 'user', content: userMessage, provider: providerToUse });
     setIsStreaming(true);
 
+    // Store user message in memory for future RAG
+    storeMemory(convId, userMessage, 'user').catch(console.warn);
+
     // Log to audit
     const sensitiveData = detectSensitiveData(fullMessage);
     addEntry({
@@ -260,7 +287,7 @@ export default function Chat() {
       tokensUsed: estimateTokens(fullMessage),
       dataSize: new Blob([fullMessage]).size,
       sensitiveDataDetected: sensitiveData.length > 0,
-      details: `Provider: ${providerToUse}, Auto: ${autoSelectProvider}, Docs: ${attachedDocIds.length}`,
+      details: `Provider: ${providerToUse}, Auto: ${autoSelectProvider}, RAG: ${useRAG}, Sources: ${ragSources}`,
     });
 
     try {
@@ -302,7 +329,10 @@ export default function Chat() {
           });
         },
         onComplete: () => {
-          // Done
+          // Store assistant response in memory
+          if (assistantContent) {
+            storeMemory(convId!, assistantContent, 'assistant').catch(console.warn);
+          }
         },
       });
     } catch (error: any) {
@@ -400,6 +430,17 @@ export default function Chat() {
             >
               <Brain className="w-4 h-4" />
               {autoSelectProvider ? "Auto" : "Manual"}
+            </Button>
+
+            {/* RAG toggle */}
+            <Button
+              variant={useRAG ? "default" : "outline"}
+              size="sm"
+              className="gap-2"
+              onClick={() => setUseRAG(!useRAG)}
+            >
+              <FileText className="w-4 h-4" />
+              RAG {ragSources > 0 && `(${ragSources})`}
             </Button>
 
             {/* Last orchestration info */}
