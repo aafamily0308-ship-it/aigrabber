@@ -31,7 +31,7 @@ const defaultProviders: Provider[] = [
     type: 'local',
     endpoint: 'http://localhost:11434',
     isActive: true,
-    status: 'offline',
+    status: 'offline', // Default offline until checked
     model: 'llama3.2',
     priority: 1,
   },
@@ -41,29 +41,39 @@ const defaultProviders: Provider[] = [
     type: 'local',
     endpoint: 'http://localhost:1234',
     isActive: true,
-    status: 'offline',
+    status: 'offline', // Default offline until checked
     model: 'local-model',
     priority: 2,
   },
   {
     id: 'gemini',
-    name: 'Gemini 2.5 Flash',
+    name: 'Gemini Pro',
     type: 'cloud',
-    endpoint: 'lovable-ai-gateway',
+    endpoint: 'https://generativelanguage.googleapis.com',
     isActive: true,
-    status: 'online',
-    model: 'google/gemini-2.5-flash',
+    status: 'offline', // Offline until API key is provided
+    model: 'gemini-pro',
     priority: 3,
   },
   {
-    id: 'gpt5',
-    name: 'GPT-5',
+    id: 'openai',
+    name: 'GPT-4o',
     type: 'cloud',
-    endpoint: 'lovable-ai-gateway',
+    endpoint: 'https://api.openai.com',
     isActive: true,
-    status: 'online',
-    model: 'openai/gpt-5',
+    status: 'offline', // Offline until API key is provided
+    model: 'gpt-4o',
     priority: 4,
+  },
+  {
+    id: 'anthropic',
+    name: 'Claude 3',
+    type: 'cloud',
+    endpoint: 'https://api.anthropic.com',
+    isActive: true,
+    status: 'offline', // Offline until API key is provided
+    model: 'claude-3-sonnet-20240229',
+    priority: 5,
   },
 ];
 

@@ -489,8 +489,8 @@ export default function Settings() {
         <div className="space-y-4">
           <div className="p-4 bg-warning/10 rounded-lg border border-warning/20">
             <p className="text-sm text-muted-foreground">
-              <strong className="text-foreground">Optional:</strong> Add your own API keys to use cloud AI directly without Lovable. 
-              Keys are stored locally on your device and never sent to Lovable servers.
+              <strong className="text-foreground">Optional:</strong> Add your own API keys to use cloud AI providers. 
+              Keys are stored locally on your device and never leave your browser.
             </p>
           </div>
 
