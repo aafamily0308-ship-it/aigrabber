@@ -137,42 +137,376 @@ AI Providers (все опциональны):
 
 ---
 
-## 🚀 Установка и запуск
+## 🚀 Полная установка системы
 
 ### Требования
-- Node.js 18+ или Bun
+- **Node.js 18+** или **Bun** (рекомендуется)
 - Современный браузер (Chrome 90+, Firefox 88+, Edge 90+)
+- **Git** для клонирования репозитория
+- Минимум 4 GB RAM для локальных AI моделей
 
-### Установка
+### Шаг 1: Скачивание проекта
+
+**Вариант A: Через Lovable (экспорт)**
+1. В Lovable открыть проект
+2. Нажать **Export to GitHub** в настройках
+3. Клонировать свой репозиторий:
 ```bash
-# Клонировать репозиторий
+git clone https://github.com/ваш-username/ai-command-center.git
+cd ai-command-center
+```
+
+**Вариант B: Прямое клонирование**
+```bash
 git clone <repository-url>
 cd ai-command-center
+```
 
-# Установить зависимости
+### Шаг 2: Установка зависимостей
+
+```bash
+# NPM
 npm install
-# или
-bun install
 
-# Запустить dev сервер
+# или Bun (быстрее)
+bun install
+```
+
+### Шаг 3: Запуск приложения
+
+```bash
+# Development режим с hot-reload
 npm run dev
 # или
 bun dev
+
+# Приложение откроется на http://localhost:5173
 ```
 
-### Сборка для продакшена
+### Шаг 4: Сборка для продакшена
+
 ```bash
+# Сборка
 npm run build
-# Результат в папке dist/
-```
 
-### Запуск на сервере
-```bash
-# Любой статический сервер
+# Результат в папке dist/
+
+# Запуск на любом статическом сервере
 npx serve dist
 # или
 python -m http.server 3000 -d dist
+# или
+docker run -p 3000:80 -v $(pwd)/dist:/usr/share/nginx/html nginx
 ```
+
+### Шаг 5: Подключение AI провайдера
+
+**Ollama (рекомендуется для начала):**
+```bash
+# Установка (Linux/macOS)
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Windows - скачать установщик с ollama.com
+
+# Загрузить модель
+ollama pull llama3.2
+# или для кода
+ollama pull codellama
+
+# Проверить что работает
+curl http://localhost:11434/api/tags
+```
+
+**LM Studio:**
+1. Скачать с https://lmstudio.ai
+2. Загрузить любую модель (Mistral, Llama, Phi)
+3. Нажать **Start Server** (порт 1234)
+4. Проверить: `curl http://localhost:1234/v1/models`
+
+**llama.cpp:**
+```bash
+# Клонировать и собрать
+git clone https://github.com/ggerganov/llama.cpp
+cd llama.cpp && make
+
+# Скачать модель (например, Mistral 7B GGUF)
+# Запустить сервер
+./server -m ./models/mistral-7b.gguf --port 8080
+
+# Проверить
+curl http://localhost:8080/v1/models
+```
+
+---
+
+## 🔍 Полный аудит системы через локальный AI
+
+После установки и подключения провайдера выполните аудит системы.
+
+### Метод 1: Консольный режим (рекомендуется)
+
+Перейдите на `/console` и выполните:
+
+```bash
+# 1. Проверить статус всех провайдеров
+/status
+# ✅ ollama: online (llama3.2, codellama, mistral)
+# ✅ lmstudio: online (mistral-7b-instruct)
+# ❌ openai: offline (no API key)
+
+# 2. Реальный пинг к провайдеру (без симуляции!)
+/ping
+# 🏓 Пинг Ollama: 45ms ✅
+# Модели: llama3.2, codellama, mistral...
+
+# 3. Получить список доступных моделей
+/models
+# 📋 Модели Ollama (5):
+#   • llama3.2
+#   • codellama
+#   • mistral
+#   • ...
+
+# 4. Полная конфигурация системы
+/config
+# ⚙️ Конфигурация системы:
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 📊 Провайдеры: 5 активных, 2 онлайн
+# 🌡️ Temperature: 0.7
+# 📝 Max Tokens: 4096
+# 🔑 API Keys: OpenAI ❌, Google ❌, Anthropic ❌
+# ...
+
+# 5. Версия и информация о системе
+/version
+# 🤖 AI Command Center v2.0.0
+# 📅 Build: 2024-01-15
+# ...
+```
+
+### Метод 2: Страница Maintenance
+
+1. Перейти на `/maintenance`
+2. **Health Checks** — диагностика всех компонентов:
+   - IndexedDB storage
+   - Vector store
+   - Provider connections
+   - Plugin system
+   - Memory usage
+3. **Maintenance** — автоматическое исправление проблем
+4. **Backups** — создание резервных копий
+
+### Метод 3: Headless API (DevTools)
+
+Откройте консоль браузера (`F12`) и выполните:
+
+```javascript
+// Проверить статус
+console.log(await window.AiCommand.ping());
+
+// Получить список провайдеров
+console.log(window.AiCommand.getProviders());
+
+// Текущий провайдер
+console.log(window.AiCommand.getProvider());
+
+// Отправить тестовое сообщение
+const response = await window.AiCommand.chat("Привет! Ты работаешь?");
+console.log(response);
+
+// История чата
+console.log(window.AiCommand.getHistory());
+
+// Полная диагностика
+const diagnostics = await window.AiCommand.diagnostics?.();
+console.log(diagnostics);
+```
+
+### Метод 4: Аудит через AI чат
+
+Откройте `/chat` и спросите AI:
+
+```
+Выполни аудит своей системы:
+1. Какие провайдеры доступны?
+2. Какие модели загружены?
+3. Сколько сообщений в истории?
+4. Какие плагины активны?
+5. Есть ли проблемы со здоровьем системы?
+```
+
+AI использует встроенные инструменты (`system-info` плагин) для диагностики.
+
+---
+
+## 🛠️ Расширенное исправление сбоев
+
+### Приложение не запускается
+
+**Симптом:** Белый экран или ошибка при загрузке
+
+**Решения:**
+```bash
+# 1. Очистить кэш Vite
+rm -rf node_modules/.vite
+npm run dev
+
+# 2. Переустановить зависимости
+rm -rf node_modules
+npm install
+npm run dev
+
+# 3. Проверить версию Node.js
+node --version  # должно быть 18+
+
+# 4. Проверить порт
+lsof -i :5173  # не занят ли порт
+```
+
+### Провайдер показывает "offline"
+
+**Симптом:** Провайдер не отвечает, статус offline
+
+**Диагностика:**
+```bash
+# Проверить Ollama
+curl http://localhost:11434/api/tags
+# Должен вернуть JSON со списком моделей
+
+# Проверить LM Studio
+curl http://localhost:1234/v1/models
+# Должен вернуть JSON с моделями
+
+# Проверить llama.cpp
+curl http://localhost:8080/v1/models
+```
+
+**Решения:**
+```bash
+# Ollama не запущен
+ollama serve
+# или
+systemctl start ollama
+
+# CORS проблема
+OLLAMA_ORIGINS="*" ollama serve
+
+# LM Studio - проверить что сервер запущен
+# В LM Studio нажать "Start Server"
+
+# Неправильный порт - проверить в Settings → Providers
+```
+
+### Данные не сохраняются
+
+**Симптом:** Сообщения/настройки пропадают после перезагрузки
+
+**Диагностика (в консоли браузера):**
+```javascript
+// Проверить IndexedDB
+const dbs = await indexedDB.databases();
+console.log(dbs);
+// Должны быть: ai-command-center, ai-command-center-vectors
+
+// Проверить localStorage
+console.log(Object.keys(localStorage));
+// Должны быть ключи ai-command-*
+```
+
+**Решения:**
+1. DevTools → Application → IndexedDB → проверить данные
+2. Перейти на `/maintenance` → Run Health Checks
+3. Очистить и пересоздать: Settings → Clear All Data
+
+### RAG не находит документы
+
+**Симптом:** AI не видит загруженные документы
+
+**Проверки:**
+1. Документы загружены? (`/knowledge`)
+2. RAG включен? (кнопка RAG в чате)
+3. Векторы созданы? (Maintenance → Health Checks)
+
+**Решение:**
+1. Maintenance → Reindex Vectors
+2. Или в консоли браузера:
+```javascript
+import { reindexAllDocuments } from '@/lib/ragPipeline';
+await reindexAllDocuments();
+```
+
+### Полный сброс системы
+
+**Когда:** Критические ошибки, повреждённые данные
+
+```javascript
+// В консоли браузера (F12)
+// ⚠️ ВНИМАНИЕ: Удалит ВСЕ данные!
+
+localStorage.clear();
+indexedDB.deleteDatabase('ai-command-center');
+indexedDB.deleteDatabase('ai-command-center-vectors');
+location.reload();
+```
+
+---
+
+## 💾 Резервное копирование и восстановление
+
+### Экспорт данных
+
+**Через UI:**
+1. Settings → Export All Data
+2. Сохранит JSON файл со всеми данными
+
+**Через консоль:**
+```bash
+/export
+# Копирует конфигурацию провайдеров в буфер обмена
+```
+
+**Программно:**
+```javascript
+import { exportAllData } from '@/lib/dataManager';
+const data = await exportAllData();
+// Скачает файл ai-command-center-backup-*.json
+```
+
+### Импорт данных
+
+**Через UI:**
+1. Settings → Import Data
+2. Выбрать JSON файл бэкапа
+
+**Через консоль:**
+```bash
+/import [{"name":"Provider","endpoint":"http://..."}]
+```
+
+### Автоматические бэкапы
+
+```typescript
+import { useMaintenanceStore } from '@/stores/maintenanceStore';
+
+// Включить авто-бэкап каждые 24 часа
+useMaintenanceStore.getState().setAutoBackup(true, 24);
+```
+
+---
+
+## ✅ Чеклист после установки
+
+Выполните все проверки после установки:
+
+- [ ] `npm run dev` запускается без ошибок
+- [ ] Браузер открывает http://localhost:5173
+- [ ] Хотя бы один провайдер показывает "online"
+- [ ] `/ping` в консоли возвращает реальный latency
+- [ ] `/models` показывает список моделей
+- [ ] Тестовое сообщение в чате получает ответ
+- [ ] Health Checks на `/maintenance` проходят
+- [ ] Документ загружается в Knowledge Base
+- [ ] Экспорт данных работает
 
 ---
 
