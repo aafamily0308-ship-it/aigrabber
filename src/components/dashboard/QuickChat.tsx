@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect } from "react";
 import { Send, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useChatStore } from "@/stores/chatStore";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { supabase } from "@/integrations/supabase/client";
+import { streamAI } from "@/lib/localAIClient";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 export function QuickChat() {
   const [input, setInput] = useState("");
@@ -12,6 +12,7 @@ export function QuickChat() {
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const { cloudApiKeys } = useSettingsStore();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -31,54 +32,42 @@ export function QuickChat() {
     setIsLoading(true);
 
     try {
-      const response = await supabase.functions.invoke('chat', {
-        body: { 
-          messages: [...messages, userMessage].map(m => ({ role: m.role, content: m.content })),
-          provider: 'cloud-gemini'
-        }
+      // Use local Ollama by default for QuickChat (fast, private)
+      const allMessages = [...messages, userMessage].map(m => ({ 
+        role: m.role as 'user' | 'assistant', 
+        content: m.content 
+      }));
+
+      let assistantContent = "";
+      setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
+
+      await streamAI({
+        provider: 'local-ollama',
+        messages: allMessages,
+        apiKey: cloudApiKeys.google, // Fallback if needed
+        onToken: (token) => {
+          assistantContent += token;
+          setMessages(prev => {
+            const newMessages = [...prev];
+            newMessages[newMessages.length - 1] = { role: 'assistant', content: assistantContent };
+            return newMessages;
+          });
+        },
+        onError: (error) => {
+          // If Ollama fails, show error message
+          setMessages(prev => {
+            const newMessages = [...prev];
+            newMessages[newMessages.length - 1] = { 
+              role: 'assistant', 
+              content: `⚠️ ${error.message}. Make sure Ollama is running, or use full Chat for cloud AI.`
+            };
+            return newMessages;
+          });
+        },
+        onComplete: () => {
+          // Done
+        },
       });
-
-      if (response.error) throw response.error;
-
-      // Handle streaming response
-      if (response.data) {
-        const reader = response.data.getReader?.();
-        if (reader) {
-          let assistantContent = "";
-          setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
-
-          const decoder = new TextDecoder();
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            const chunk = decoder.decode(value, { stream: true });
-            const lines = chunk.split('\n');
-
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const data = line.slice(6).trim();
-                if (data === '[DONE]') continue;
-                try {
-                  const parsed = JSON.parse(data);
-                  const content = parsed.choices?.[0]?.delta?.content;
-                  if (content) {
-                    assistantContent += content;
-                    setMessages(prev => {
-                      const newMessages = [...prev];
-                      newMessages[newMessages.length - 1] = { role: 'assistant', content: assistantContent };
-                      return newMessages;
-                    });
-                  }
-                } catch {}
-              }
-            }
-          }
-        } else {
-          // Non-streaming fallback
-          setMessages(prev => [...prev, { role: 'assistant', content: response.data.content || response.data }]);
-        }
-      }
     } catch (error) {
       console.error('Chat error:', error);
       setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, an error occurred. Please try again.' }]);

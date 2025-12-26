@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { 
   Moon, 
   Sun,
@@ -13,7 +13,13 @@ import {
   Eye,
   EyeOff,
   Plus,
-  Check
+  Check,
+  Key,
+  Upload,
+  RefreshCw,
+  CheckCircle,
+  XCircle,
+  Loader2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -21,10 +27,12 @@ import { Slider } from "@/components/ui/slider";
 import { useChatStore } from "@/stores/chatStore";
 import { useKnowledgeStore } from "@/stores/knowledgeStore";
 import { useProviderStore } from "@/stores/providerStore";
-import { useSettingsStore, AccentColor, ThemeMode } from "@/stores/settingsStore";
+import { useSettingsStore, AccentColor, ThemeMode, CloudApiKeys } from "@/stores/settingsStore";
 import { useAuditStore } from "@/stores/auditStore";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { testProvider } from "@/lib/localAIClient";
+import { downloadExport, importData, getStorageUsage, formatBytes } from "@/lib/dataManager";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -57,6 +65,10 @@ const accentColors: { id: AccentColor; name: string; color: string }[] = [
 export default function Settings() {
   const { toast } = useToast();
   const [newProfileName, setNewProfileName] = useState('');
+  const [testingProvider, setTestingProvider] = useState<string | null>(null);
+  const [providerStatus, setProviderStatus] = useState<Record<string, { success: boolean; message: string }>>({});
+  const [showApiKeys, setShowApiKeys] = useState<Record<string, boolean>>({});
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const { conversations, clearConversations } = useChatStore();
   const { documents } = useKnowledgeStore();
@@ -74,6 +86,7 @@ export default function Settings() {
     topP,
     smartRouter,
     profiles,
+    cloudApiKeys,
     setTheme,
     setAccentColor,
     setFontSize,
@@ -83,6 +96,8 @@ export default function Settings() {
     setMaxTokens,
     setTopP,
     setSmartRouter,
+    setCloudApiKey,
+    removeCloudApiKey,
     addProfile,
     deleteProfile,
     applyProfile,
@@ -95,27 +110,45 @@ export default function Settings() {
     setShowDataPreview,
   } = useAuditStore();
 
-  const handleExportData = () => {
-    const data = {
-      conversations,
-      documents,
-      providers,
-      auditEntries: entries,
-      exportedAt: new Date().toISOString(),
-    };
-    
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `ai-command-center-backup-${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const handleExportData = async () => {
+    try {
+      await downloadExport();
+      toast({
+        title: "Data Exported",
+        description: "Your data has been downloaded as JSON.",
+      });
+    } catch (error) {
+      toast({
+        title: "Export Failed",
+        description: "Failed to export data.",
+        variant: "destructive",
+      });
+    }
+  };
 
-    toast({
-      title: "Data Exported",
-      description: "Your data has been downloaded as JSON.",
-    });
+  const handleImportData = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const result = await importData(file);
+    if (result.success) {
+      toast({
+        title: "Import Successful",
+        description: `Imported: ${result.imported.join(', ')}`,
+      });
+      window.location.reload();
+    } else {
+      toast({
+        title: "Import Failed",
+        description: result.message,
+        variant: "destructive",
+      });
+    }
+    
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   const handleClearData = () => {
@@ -126,6 +159,25 @@ export default function Settings() {
       description: "All local data has been removed.",
     });
     window.location.reload();
+  };
+
+  const handleTestProvider = async (providerKey: keyof CloudApiKeys) => {
+    setTestingProvider(providerKey);
+    const providerMap: Record<keyof CloudApiKeys, any> = {
+      openai: 'cloud-openai',
+      google: 'cloud-google',
+      anthropic: 'cloud-anthropic',
+    };
+    
+    const result = await testProvider(providerMap[providerKey], cloudApiKeys[providerKey]);
+    setProviderStatus(prev => ({ ...prev, [providerKey]: result }));
+    setTestingProvider(null);
+    
+    toast({
+      title: result.success ? "Connection Successful" : "Connection Failed",
+      description: result.message,
+      variant: result.success ? "default" : "destructive",
+    });
   };
 
   const handleCreateProfile = () => {
@@ -428,6 +480,157 @@ export default function Settings() {
         </div>
       </section>
 
+      {/* Cloud API Keys */}
+      <section className="glass rounded-xl p-6">
+        <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+          <Key className="w-5 h-5 text-warning" />
+          Cloud AI API Keys
+        </h2>
+        <div className="space-y-4">
+          <div className="p-4 bg-warning/10 rounded-lg border border-warning/20">
+            <p className="text-sm text-muted-foreground">
+              <strong className="text-foreground">Optional:</strong> Add your own API keys to use cloud AI directly without Lovable. 
+              Keys are stored locally on your device and never sent to Lovable servers.
+            </p>
+          </div>
+
+          {/* OpenAI API Key */}
+          <div className="p-4 bg-muted/20 rounded-lg space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-foreground">OpenAI API Key</p>
+                <p className="text-xs text-muted-foreground">For GPT-4o access</p>
+              </div>
+              {providerStatus.openai && (
+                providerStatus.openai.success 
+                  ? <CheckCircle className="w-5 h-5 text-success" />
+                  : <XCircle className="w-5 h-5 text-destructive" />
+              )}
+            </div>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Input
+                  type={showApiKeys.openai ? "text" : "password"}
+                  placeholder="sk-..."
+                  value={cloudApiKeys.openai || ''}
+                  onChange={(e) => setCloudApiKey('openai', e.target.value)}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowApiKeys(prev => ({ ...prev, openai: !prev.openai }))}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showApiKeys.openai ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <Button 
+                variant="outline" 
+                onClick={() => handleTestProvider('openai')}
+                disabled={!cloudApiKeys.openai || testingProvider === 'openai'}
+              >
+                {testingProvider === 'openai' ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              </Button>
+              {cloudApiKeys.openai && (
+                <Button variant="ghost" onClick={() => removeCloudApiKey('openai')}>
+                  <Trash2 className="w-4 h-4 text-destructive" />
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Google AI API Key */}
+          <div className="p-4 bg-muted/20 rounded-lg space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-foreground">Google AI API Key</p>
+                <p className="text-xs text-muted-foreground">For Gemini access</p>
+              </div>
+              {providerStatus.google && (
+                providerStatus.google.success 
+                  ? <CheckCircle className="w-5 h-5 text-success" />
+                  : <XCircle className="w-5 h-5 text-destructive" />
+              )}
+            </div>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Input
+                  type={showApiKeys.google ? "text" : "password"}
+                  placeholder="AIza..."
+                  value={cloudApiKeys.google || ''}
+                  onChange={(e) => setCloudApiKey('google', e.target.value)}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowApiKeys(prev => ({ ...prev, google: !prev.google }))}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showApiKeys.google ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <Button 
+                variant="outline" 
+                onClick={() => handleTestProvider('google')}
+                disabled={!cloudApiKeys.google || testingProvider === 'google'}
+              >
+                {testingProvider === 'google' ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              </Button>
+              {cloudApiKeys.google && (
+                <Button variant="ghost" onClick={() => removeCloudApiKey('google')}>
+                  <Trash2 className="w-4 h-4 text-destructive" />
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Anthropic API Key */}
+          <div className="p-4 bg-muted/20 rounded-lg space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-foreground">Anthropic API Key</p>
+                <p className="text-xs text-muted-foreground">For Claude access</p>
+              </div>
+              {providerStatus.anthropic && (
+                providerStatus.anthropic.success 
+                  ? <CheckCircle className="w-5 h-5 text-success" />
+                  : <XCircle className="w-5 h-5 text-destructive" />
+              )}
+            </div>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Input
+                  type={showApiKeys.anthropic ? "text" : "password"}
+                  placeholder="sk-ant-..."
+                  value={cloudApiKeys.anthropic || ''}
+                  onChange={(e) => setCloudApiKey('anthropic', e.target.value)}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowApiKeys(prev => ({ ...prev, anthropic: !prev.anthropic }))}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showApiKeys.anthropic ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <Button 
+                variant="outline" 
+                onClick={() => handleTestProvider('anthropic')}
+                disabled={!cloudApiKeys.anthropic || testingProvider === 'anthropic'}
+              >
+                {testingProvider === 'anthropic' ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              </Button>
+              {cloudApiKeys.anthropic && (
+                <Button variant="ghost" onClick={() => removeCloudApiKey('anthropic')}>
+                  <Trash2 className="w-4 h-4 text-destructive" />
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Data Management */}
       <section className="glass rounded-xl p-6">
         <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
@@ -435,6 +638,22 @@ export default function Settings() {
           Data Management
         </h2>
         <div className="space-y-4">
+          {/* Storage Usage */}
+          <div className="p-4 bg-muted/20 rounded-lg">
+            <div className="flex justify-between mb-2">
+              <p className="font-medium text-foreground">Storage Usage</p>
+              <p className="text-sm text-muted-foreground">
+                {formatBytes(getStorageUsage().used)} / {formatBytes(5 * 1024 * 1024)}
+              </p>
+            </div>
+            <div className="w-full bg-muted rounded-full h-2">
+              <div 
+                className="bg-primary h-2 rounded-full transition-all"
+                style={{ width: `${Math.min(getStorageUsage().percentage, 100)}%` }}
+              />
+            </div>
+          </div>
+
           <div className="flex items-center justify-between p-4 bg-muted/20 rounded-lg">
             <div>
               <p className="font-medium text-foreground">Export Data</p>
@@ -444,6 +663,26 @@ export default function Settings() {
               <Download className="w-4 h-4" />
               Export
             </Button>
+          </div>
+
+          <div className="flex items-center justify-between p-4 bg-muted/20 rounded-lg">
+            <div>
+              <p className="font-medium text-foreground">Import Data</p>
+              <p className="text-sm text-muted-foreground">Restore from a backup file</p>
+            </div>
+            <div>
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleImportData}
+                accept=".json"
+                className="hidden"
+              />
+              <Button variant="outline" onClick={() => fileInputRef.current?.click()} className="gap-2">
+                <Upload className="w-4 h-4" />
+                Import
+              </Button>
+            </div>
           </div>
 
           <div className="flex items-center justify-between p-4 bg-destructive/10 rounded-lg border border-destructive/20">
