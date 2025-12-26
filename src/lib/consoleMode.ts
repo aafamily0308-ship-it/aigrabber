@@ -93,17 +93,6 @@ export const consoleCommands: Map<string, ConsoleCommand> = new Map([
     },
   }],
   
-  ['export', {
-    name: 'export',
-    description: 'Экспортировать историю чата',
-    usage: '/export',
-    execute: (_, context) => {
-      const history = context.history.join('\n---\n');
-      navigator.clipboard.writeText(history);
-      return '📋 История скопирована в буфер обмена';
-    },
-  }],
-  
   ['history', {
     name: 'history',
     description: 'Показать историю команд',
@@ -140,11 +129,148 @@ export const consoleCommands: Map<string, ConsoleCommand> = new Map([
     description: 'Проверить соединение с провайдером',
     usage: '/ping',
     execute: async (_, context) => {
+      const { providerRegistry } = await import('@/lib/providers');
+      const { useProviderStore } = await import('@/stores/providerStore');
+      
+      const provider = useProviderStore.getState().providers.find(p => p.id === context.currentProvider);
+      if (!provider) {
+        return `❌ Провайдер ${context.currentProvider} не найден`;
+      }
+      
+      const plugin = providerRegistry.get(context.currentProvider);
+      if (!plugin) {
+        return `❌ Плагин провайдера ${context.currentProvider} не найден`;
+      }
+      
       const start = Date.now();
-      // Simulate ping - in real implementation would call provider.test()
-      await new Promise(r => setTimeout(r, 100));
-      const latency = Date.now() - start;
-      return `🏓 Пинг ${context.currentProvider}: ${latency}ms`;
+      try {
+        const result = await plugin.test(provider.endpoint, provider.apiKey);
+        const latency = Date.now() - start;
+        
+        if (result.online) {
+          const modelsInfo = result.models?.length ? `\nМодели: ${result.models.slice(0, 5).join(', ')}${result.models.length > 5 ? '...' : ''}` : '';
+          return `🏓 Пинг ${provider.name}: ${latency}ms ✅${modelsInfo}`;
+        } else {
+          return `❌ ${provider.name} недоступен: ${result.error || 'Connection failed'}`;
+        }
+      } catch (error: any) {
+        const latency = Date.now() - start;
+        return `❌ Ошибка пинга ${provider.name} (${latency}ms): ${error.message}`;
+      }
+    },
+  }],
+  
+  ['models', {
+    name: 'models',
+    description: 'Показать доступные модели текущего провайдера',
+    usage: '/models',
+    execute: async (_, context) => {
+      const { providerRegistry } = await import('@/lib/providers');
+      const { useProviderStore } = await import('@/stores/providerStore');
+      
+      const provider = useProviderStore.getState().providers.find(p => p.id === context.currentProvider);
+      if (!provider) {
+        return `❌ Провайдер ${context.currentProvider} не найден`;
+      }
+      
+      const plugin = providerRegistry.get(context.currentProvider);
+      if (!plugin?.getModels) {
+        return `❌ Провайдер ${provider.name} не поддерживает список моделей`;
+      }
+      
+      try {
+        const models = await plugin.getModels(provider.endpoint, provider.apiKey);
+        if (models.length === 0) {
+          return `📋 ${provider.name}: модели не найдены`;
+        }
+        return `📋 Модели ${provider.name} (${models.length}):\n${models.map(m => `  • ${m}`).join('\n')}`;
+      } catch (error: any) {
+        return `❌ Ошибка получения моделей: ${error.message}`;
+      }
+    },
+  }],
+  
+  ['config', {
+    name: 'config',
+    description: 'Показать текущую конфигурацию системы',
+    usage: '/config',
+    execute: async () => {
+      const { useProviderStore } = await import('@/stores/providerStore');
+      const { useSettingsStore } = await import('@/stores/settingsStore');
+      
+      const providers = useProviderStore.getState().providers;
+      const settings = useSettingsStore.getState();
+      const activeProviders = providers.filter(p => p.isActive);
+      const onlineProviders = providers.filter(p => p.status === 'online');
+      
+      const apiStatus = (key: string | undefined) => key ? '✅' : '❌';
+      
+      return `⚙️ Конфигурация системы:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 Провайдеры: ${activeProviders.length} активных, ${onlineProviders.length} онлайн
+🌡️ Temperature: ${settings.temperature}
+📝 Max Tokens: ${settings.maxTokens}
+🔑 API Keys: OpenAI ${apiStatus(settings.cloudApiKeys?.openai)}, Google ${apiStatus(settings.cloudApiKeys?.google)}, Anthropic ${apiStatus(settings.cloudApiKeys?.anthropic)}
+
+Провайдеры онлайн:
+${onlineProviders.length > 0 ? onlineProviders.map(p => `  🟢 ${p.name} (${p.latency || '?'}ms)`).join('\n') : '  Нет доступных'}
+
+Активные провайдеры:
+${activeProviders.map(p => `  ${p.status === 'online' ? '🟢' : '🔴'} ${p.name}`).join('\n')}`;
+    },
+  }],
+  
+  ['export', {
+    name: 'export',
+    description: 'Экспортировать конфигурацию провайдеров',
+    usage: '/export',
+    execute: async () => {
+      const { providerRegistry } = await import('@/lib/providers');
+      const config = providerRegistry.exportConfig();
+      
+      try {
+        await navigator.clipboard.writeText(config);
+        const parsed = JSON.parse(config);
+        return `📤 Конфигурация экспортирована в буфер обмена!\n\n${parsed.length} кастомных провайдеров (${config.length} символов)`;
+      } catch {
+        return `📤 Конфигурация:\n\n${config}`;
+      }
+    },
+  }],
+  
+  ['import', {
+    name: 'import',
+    description: 'Импортировать конфигурацию провайдеров',
+    usage: '/import <json>',
+    execute: async (args) => {
+      if (args.length === 0) {
+        return `❌ Использование: /import <json>\n\nВставьте JSON конфигурацию после команды.\nПример: /import [{"name":"MyProvider","endpoint":"http://localhost:8080"}]`;
+      }
+      
+      const { providerRegistry } = await import('@/lib/providers');
+      try {
+        const json = args.join(' ');
+        const count = providerRegistry.importConfig(json);
+        return `📥 Успешно импортировано ${count} провайдеров!`;
+      } catch (error: any) {
+        return `❌ Ошибка импорта: ${error.message}\n\nУбедитесь что JSON валидный.`;
+      }
+    },
+  }],
+  
+  ['version', {
+    name: 'version',
+    description: 'Показать версию системы',
+    usage: '/version',
+    execute: () => {
+      return `🚀 AI Command Center v2.0
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📦 React 18 + TypeScript + Vite
+🎨 TailwindCSS + shadcn/ui
+💾 IndexedDB + Zustand
+🤖 10 AI Providers supported
+🔌 Plugin System + MCP Client
+📊 RAG Pipeline + Vector Store`;
     },
   }],
 ]);
