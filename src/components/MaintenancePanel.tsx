@@ -18,7 +18,16 @@ import {
   Settings2,
   FileDown,
   Play,
-  Loader2
+  Loader2,
+  Brain,
+  Zap,
+  ShieldAlert,
+  ShieldCheck,
+  RotateCcw,
+  Power,
+  FlaskConical,
+  Target,
+  TrendingUp
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -51,11 +60,34 @@ import { useToast } from '@/hooks/use-toast';
 import { useMaintenanceStore } from '@/stores/maintenanceStore';
 import { getPlatform, SystemHealth } from '@/lib/maintenanceSystem';
 import { formatDistanceToNow } from 'date-fns';
+import { useSystemBrain, DiagnosisResult, RepairResult, ComponentHealth, BrainMode } from '@/lib/aiBrain';
+import { StressTestReport } from '@/lib/stressTest';
 
 export function MaintenancePanel() {
   const [providerStatus, setProviderStatus] = useState<Array<{ provider: string; status: string; message: string }>>([]);
   const [testingProviders, setTestingProviders] = useState(false);
+  const [diagnosisResult, setDiagnosisResult] = useState<DiagnosisResult | null>(null);
+  const [repairResult, setRepairResult] = useState<RepairResult | null>(null);
+  const [stressReport, setStressReport] = useState<StressTestReport | null>(null);
+  const [isRunningDiagnosis, setIsRunningDiagnosis] = useState(false);
+  const [isRunningRepair, setIsRunningRepair] = useState(false);
+  const [isRunningStress, setIsRunningStress] = useState(false);
   const { toast } = useToast();
+
+  // AI Brain hook
+  const { 
+    snapshot, 
+    mode, 
+    components, 
+    metrics, 
+    diagnose, 
+    repair, 
+    stressTest,
+    isolate,
+    restore,
+    enterSafeMode,
+    exitSafeMode 
+  } = useSystemBrain();
 
   const {
     isMaintenanceMode,
@@ -150,6 +182,58 @@ export function MaintenancePanel() {
     }
   };
 
+  // AI Brain handlers
+  const handleAIDiagnose = async (useAI: boolean = false) => {
+    setIsRunningDiagnosis(true);
+    try {
+      const result = await diagnose(useAI);
+      setDiagnosisResult(result);
+      toast({
+        title: 'Diagnosis Complete',
+        description: `Found ${result.issues.length} issues. Status: ${result.overallStatus}`,
+        variant: result.overallStatus === 'healthy' ? 'default' : 'destructive',
+      });
+    } catch (error: any) {
+      toast({ title: 'Diagnosis Failed', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsRunningDiagnosis(false);
+    }
+  };
+
+  const handleAIRepair = async () => {
+    setIsRunningRepair(true);
+    try {
+      const result = await repair();
+      setRepairResult(result);
+      toast({
+        title: result.success ? 'Repair Complete' : 'Repair Partial',
+        description: `Recovered ${result.componentsRecovered.length} components`,
+        variant: result.success ? 'default' : 'destructive',
+      });
+    } catch (error: any) {
+      toast({ title: 'Repair Failed', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsRunningRepair(false);
+    }
+  };
+
+  const handleStressTest = async () => {
+    setIsRunningStress(true);
+    try {
+      const result = await stressTest();
+      setStressReport(result);
+      toast({
+        title: 'Stress Test Complete',
+        description: `${result.passedTests}/${result.totalTests} tests passed`,
+        variant: result.systemStable ? 'default' : 'destructive',
+      });
+    } catch (error: any) {
+      toast({ title: 'Stress Test Failed', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsRunningStress(false);
+    }
+  };
+
   const getStatusIcon = (status: 'pass' | 'warn' | 'fail' | 'healthy' | 'warning' | 'critical') => {
     switch (status) {
       case 'pass':
@@ -177,16 +261,47 @@ export function MaintenancePanel() {
     );
   };
 
+  const getComponentStatusIcon = (status: ComponentHealth['status']) => {
+    switch (status) {
+      case 'healthy':
+        return <CheckCircle2 className="w-4 h-4 text-success" />;
+      case 'degraded':
+        return <AlertTriangle className="w-4 h-4 text-warning" />;
+      case 'failed':
+        return <XCircle className="w-4 h-4 text-destructive" />;
+      case 'isolated':
+        return <ShieldAlert className="w-4 h-4 text-muted-foreground" />;
+    }
+  };
+
+  const getModeLabel = (mode: BrainMode) => {
+    switch (mode) {
+      case 'normal': return 'Normal';
+      case 'safe': return 'Safe Mode';
+      case 'recovery': return 'Recovery';
+      case 'maintenance': return 'Maintenance';
+    }
+  };
+
+  const getModeColor = (mode: BrainMode) => {
+    switch (mode) {
+      case 'normal': return 'text-success';
+      case 'safe': return 'text-warning';
+      case 'recovery': return 'text-primary';
+      case 'maintenance': return 'text-muted-foreground';
+    }
+  };
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold flex items-center gap-2">
-            <Wrench className="w-6 h-6" />
-            System Maintenance
+            <Brain className="w-6 h-6" />
+            System Brain & Maintenance
           </h2>
           <p className="text-muted-foreground">
-            Platform: {getPlatform()} • Health monitoring, backups, and self-repair
+            Platform: {getPlatform()} • AI-powered diagnostics, self-repair, and monitoring
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -196,14 +311,26 @@ export function MaintenancePanel() {
               Maintenance Mode
             </Badge>
           )}
+          <Badge variant="outline" className={getModeColor(mode)}>
+            <Brain className="w-3 h-3 mr-1" />
+            {getModeLabel(mode)}
+          </Badge>
           <Badge variant={lastHealthCheck?.overall === 'healthy' ? 'default' : lastHealthCheck?.overall === 'warning' ? 'secondary' : 'destructive'}>
             {lastHealthCheck?.overall?.toUpperCase() || 'UNKNOWN'}
           </Badge>
         </div>
       </div>
 
-      <Tabs defaultValue="health">
-        <TabsList className="grid w-full grid-cols-4">
+      <Tabs defaultValue="brain">
+        <TabsList className="grid w-full grid-cols-6">
+          <TabsTrigger value="brain" className="gap-2">
+            <Brain className="w-4 h-4" />
+            AI Brain
+          </TabsTrigger>
+          <TabsTrigger value="stress" className="gap-2">
+            <FlaskConical className="w-4 h-4" />
+            Stress Test
+          </TabsTrigger>
           <TabsTrigger value="health" className="gap-2">
             <Activity className="w-4 h-4" />
             Health
@@ -221,6 +348,428 @@ export function MaintenancePanel() {
             Providers
           </TabsTrigger>
         </TabsList>
+
+        {/* AI Brain Tab */}
+        <TabsContent value="brain" className="space-y-4">
+          {/* Brain Status Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Brain className="w-5 h-5" />
+                System Brain Status
+              </CardTitle>
+              <CardDescription>
+                Intelligent system controller with Circuit Breaker and isolation capabilities
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Mode & Metrics */}
+              <div className="grid grid-cols-4 gap-4">
+                <div className="p-3 bg-muted/50 rounded-lg">
+                  <p className="text-xs text-muted-foreground">Mode</p>
+                  <p className={`font-bold ${getModeColor(mode)}`}>{getModeLabel(mode)}</p>
+                </div>
+                <div className="p-3 bg-muted/50 rounded-lg">
+                  <p className="text-xs text-muted-foreground">Components</p>
+                  <p className="font-bold">{components.filter(c => c.status === 'healthy').length}/{components.length}</p>
+                </div>
+                <div className="p-3 bg-muted/50 rounded-lg">
+                  <p className="text-xs text-muted-foreground">Total Errors</p>
+                  <p className="font-bold text-destructive">{metrics.totalErrors}</p>
+                </div>
+                <div className="p-3 bg-muted/50 rounded-lg">
+                  <p className="text-xs text-muted-foreground">Uptime</p>
+                  <p className="font-bold">{Math.floor(metrics.uptime / 60000)}m</p>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <Button 
+                  onClick={() => handleAIDiagnose(false)} 
+                  disabled={isRunningDiagnosis}
+                  variant="outline"
+                >
+                  {isRunningDiagnosis ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Target className="w-4 h-4 mr-2" />}
+                  Quick Diagnose
+                </Button>
+                <Button 
+                  onClick={() => handleAIDiagnose(true)} 
+                  disabled={isRunningDiagnosis}
+                  variant="outline"
+                >
+                  {isRunningDiagnosis ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Brain className="w-4 h-4 mr-2" />}
+                  AI Diagnose
+                </Button>
+                <Button 
+                  onClick={handleAIRepair} 
+                  disabled={isRunningRepair}
+                  variant="default"
+                >
+                  {isRunningRepair ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Wrench className="w-4 h-4 mr-2" />}
+                  Auto Repair
+                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant={mode === 'safe' ? 'default' : 'destructive'}>
+                      <Power className="w-4 h-4 mr-2" />
+                      {mode === 'safe' ? 'Exit Safe Mode' : 'Safe Mode'}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>
+                        {mode === 'safe' ? 'Exit Safe Mode?' : 'Enter Safe Mode?'}
+                      </AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {mode === 'safe' 
+                          ? 'This will restore all isolated components and return to normal operation.'
+                          : 'Safe mode will isolate non-critical components to ensure system stability.'}
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={() => mode === 'safe' ? exitSafeMode() : enterSafeMode()}>
+                        {mode === 'safe' ? 'Exit Safe Mode' : 'Enter Safe Mode'}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Component Status */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Shield className="w-4 h-4" />
+                Component Status & Circuit Breakers
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ScrollArea className="h-[300px]">
+                <div className="space-y-2">
+                  {components.map((comp) => (
+                    <Card key={comp.id} className="border-muted">
+                      <CardContent className="p-3 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          {getComponentStatusIcon(comp.status)}
+                          <div>
+                            <p className="font-medium">{comp.name}</p>
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <span>Errors: {comp.errorCount}</span>
+                              {comp.circuitBreaker.isOpen && (
+                                <Badge variant="destructive" className="text-[10px]">
+                                  Circuit Open
+                                </Badge>
+                              )}
+                              {comp.circuitBreaker.failures > 0 && !comp.circuitBreaker.isOpen && (
+                                <Badge variant="secondary" className="text-[10px]">
+                                  Failures: {comp.circuitBreaker.failures}/3
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={
+                            comp.status === 'healthy' ? 'default' :
+                            comp.status === 'degraded' ? 'secondary' :
+                            comp.status === 'isolated' ? 'outline' : 'destructive'
+                          }>
+                            {comp.status.toUpperCase()}
+                          </Badge>
+                          {comp.status === 'isolated' ? (
+                            <Button 
+                              size="sm" 
+                              variant="outline" 
+                              onClick={() => restore(comp.id)}
+                            >
+                              <RotateCcw className="w-3 h-3 mr-1" />
+                              Restore
+                            </Button>
+                          ) : comp.status === 'failed' ? (
+                            <Button 
+                              size="sm" 
+                              variant="destructive" 
+                              onClick={() => isolate(comp.id)}
+                            >
+                              <ShieldAlert className="w-3 h-3 mr-1" />
+                              Isolate
+                            </Button>
+                          ) : null}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+
+          {/* Diagnosis Result */}
+          {diagnosisResult && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  {getStatusIcon(diagnosisResult.overallStatus)}
+                  Latest Diagnosis Result
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {diagnosisResult.issues.length > 0 ? (
+                  <ScrollArea className="h-[200px]">
+                    <div className="space-y-2">
+                      {diagnosisResult.issues.map((issue, idx) => (
+                        <div key={idx} className="p-3 bg-muted/50 rounded-lg">
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium">{issue.component}</span>
+                            <Badge variant={
+                              issue.severity === 'critical' || issue.severity === 'high' ? 'destructive' :
+                              issue.severity === 'medium' ? 'secondary' : 'outline'
+                            }>
+                              {issue.severity.toUpperCase()}
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground mt-1">{issue.description}</p>
+                          <p className="text-xs text-primary mt-1">Fix: {issue.suggestedFix}</p>
+                          {issue.autoFixable && (
+                            <Badge variant="outline" className="mt-2 text-[10px]">Auto-fixable</Badge>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                ) : (
+                  <div className="text-center py-4 text-success">
+                    <ShieldCheck className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                    <p>No issues found!</p>
+                  </div>
+                )}
+
+                {diagnosisResult.aiAnalysis && (
+                  <div className="p-3 bg-primary/10 rounded-lg border border-primary/20">
+                    <p className="text-sm font-medium mb-2 flex items-center gap-2">
+                      <Brain className="w-4 h-4" />
+                      AI Analysis
+                    </p>
+                    <p className="text-sm whitespace-pre-wrap">{diagnosisResult.aiAnalysis}</p>
+                  </div>
+                )}
+
+                {diagnosisResult.recommendations.length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium mb-2">Recommendations:</p>
+                    <ul className="text-sm list-disc list-inside text-muted-foreground">
+                      {diagnosisResult.recommendations.map((rec, idx) => (
+                        <li key={idx}>{rec}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Repair Result */}
+          {repairResult && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  {repairResult.success ? (
+                    <CheckCircle2 className="w-5 h-5 text-success" />
+                  ) : (
+                    <AlertTriangle className="w-5 h-5 text-warning" />
+                  )}
+                  Latest Repair Result
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {repairResult.actionsPerformed.length > 0 && (
+                    <div>
+                      <p className="text-sm font-medium text-success">Actions Performed:</p>
+                      <ul className="text-sm list-disc list-inside">
+                        {repairResult.actionsPerformed.map((action, idx) => (
+                          <li key={idx}>{action}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {repairResult.componentsRecovered.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {repairResult.componentsRecovered.map((comp, idx) => (
+                        <Badge key={idx} variant="default">{comp}</Badge>
+                      ))}
+                    </div>
+                  )}
+                  {repairResult.errors.length > 0 && (
+                    <div>
+                      <p className="text-sm font-medium text-destructive">Errors:</p>
+                      <ul className="text-sm list-disc list-inside text-destructive">
+                        {repairResult.errors.map((err, idx) => (
+                          <li key={idx}>{err}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        {/* Stress Test Tab */}
+        <TabsContent value="stress" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FlaskConical className="w-5 h-5" />
+                System Stress Test
+              </CardTitle>
+              <CardDescription>
+                Run maximum load tests to verify system stability
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Button 
+                onClick={handleStressTest} 
+                disabled={isRunningStress}
+                size="lg"
+                className="w-full"
+              >
+                {isRunningStress ? (
+                  <>
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    Running Stress Tests...
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-5 h-5 mr-2" />
+                    Run Full Stress Test
+                  </>
+                )}
+              </Button>
+
+              {stressReport && (
+                <div className="space-y-4">
+                  {/* Summary */}
+                  <div className="grid grid-cols-4 gap-4">
+                    <div className="p-3 bg-muted/50 rounded-lg text-center">
+                      <p className="text-2xl font-bold">{stressReport.totalTests}</p>
+                      <p className="text-xs text-muted-foreground">Total Tests</p>
+                    </div>
+                    <div className="p-3 bg-success/20 rounded-lg text-center">
+                      <p className="text-2xl font-bold text-success">{stressReport.passedTests}</p>
+                      <p className="text-xs text-muted-foreground">Passed</p>
+                    </div>
+                    <div className="p-3 bg-destructive/20 rounded-lg text-center">
+                      <p className="text-2xl font-bold text-destructive">{stressReport.failedTests}</p>
+                      <p className="text-xs text-muted-foreground">Failed</p>
+                    </div>
+                    <div className="p-3 bg-muted/50 rounded-lg text-center">
+                      <p className="text-2xl font-bold">{(stressReport.totalDuration / 1000).toFixed(1)}s</p>
+                      <p className="text-xs text-muted-foreground">Duration</p>
+                    </div>
+                  </div>
+
+                  {/* System Stable Badge */}
+                  <div className="flex items-center justify-center">
+                    <Badge 
+                      variant={stressReport.systemStable ? 'default' : 'destructive'}
+                      className="text-lg px-4 py-2"
+                    >
+                      {stressReport.systemStable ? (
+                        <>
+                          <ShieldCheck className="w-5 h-5 mr-2" />
+                          System Stable
+                        </>
+                      ) : (
+                        <>
+                          <ShieldAlert className="w-5 h-5 mr-2" />
+                          System Unstable
+                        </>
+                      )}
+                    </Badge>
+                  </div>
+
+                  {/* Individual Results */}
+                  <ScrollArea className="h-[300px]">
+                    <div className="space-y-2">
+                      {stressReport.results.map((result, idx) => (
+                        <Card key={idx} className={result.passed ? 'border-success/30' : 'border-destructive/30'}>
+                          <CardContent className="p-3">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                {result.passed ? (
+                                  <CheckCircle2 className="w-4 h-4 text-success" />
+                                ) : (
+                                  <XCircle className="w-4 h-4 text-destructive" />
+                                )}
+                                <span className="font-medium">{result.testName}</span>
+                                <Badge variant="outline" className="text-[10px]">{result.category}</Badge>
+                              </div>
+                              <Badge variant={result.passed ? 'default' : 'destructive'}>
+                                {result.passed ? 'PASS' : 'FAIL'}
+                              </Badge>
+                            </div>
+                            <div className="grid grid-cols-4 gap-2 text-xs text-muted-foreground">
+                              <div>
+                                <span className="block text-foreground">{result.iterations}</span>
+                                <span>Iterations</span>
+                              </div>
+                              <div>
+                                <span className="block text-foreground">{result.averageLatency.toFixed(1)}ms</span>
+                                <span>Avg Latency</span>
+                              </div>
+                              <div>
+                                <span className="block text-foreground">{result.maxLatency.toFixed(1)}ms</span>
+                                <span>Max Latency</span>
+                              </div>
+                              <div>
+                                <span className="block text-foreground">{(result.duration / 1000).toFixed(2)}s</span>
+                                <span>Duration</span>
+                              </div>
+                            </div>
+                            {result.errors.length > 0 && (
+                              <div className="mt-2 text-xs text-destructive">
+                                Errors: {result.errors.slice(0, 2).join(', ')}
+                                {result.errors.length > 2 && ` (+${result.errors.length - 2} more)`}
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  </ScrollArea>
+
+                  {/* Recommendations */}
+                  {stressReport.recommendations.length > 0 && (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <TrendingUp className="w-4 h-4" />
+                          Recommendations
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <ul className="text-sm space-y-1">
+                          {stressReport.recommendations.map((rec, idx) => (
+                            <li key={idx} className="flex items-start gap-2">
+                              <CheckCircle2 className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                              <span>{rec}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         {/* Health Tab */}
         <TabsContent value="health" className="space-y-4">

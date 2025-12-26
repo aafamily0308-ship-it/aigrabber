@@ -1,4 +1,4 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import { 
   LayoutDashboard, 
   MessageSquare, 
@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
+import { SystemHealthIndicator } from "@/components/SystemHealthIndicator";
 
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
@@ -30,6 +31,7 @@ const navItems = [
 
 export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
+  const navigate = useNavigate();
 
   return (
     <aside 
@@ -75,6 +77,14 @@ export function Sidebar() {
           </NavLink>
         ))}
       </nav>
+
+      {/* System Health Indicator */}
+      <div className="px-2 py-2 border-t border-sidebar-border">
+        <SystemHealthIndicator 
+          collapsed={collapsed} 
+          onClick={() => navigate('/maintenance')}
+        />
+      </div>
 
       {/* Collapse Toggle */}
       <button

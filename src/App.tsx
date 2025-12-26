@@ -14,8 +14,15 @@ import PromptsLibrary from "./pages/PromptsLibrary";
 import Plugins from "./pages/Plugins";
 import Maintenance from "./pages/Maintenance";
 import NotFound from "./pages/NotFound";
+import { useAutoCheck } from "@/hooks/useAutoCheck";
 
 const queryClient = new QueryClient();
+
+// Auto-check wrapper component
+function AppWithAutoCheck({ children }: { children: React.ReactNode }) {
+  useAutoCheck({ runOnMount: true, showToastOnIssues: true });
+  return <>{children}</>;
+}
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -24,20 +31,22 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
-          <Routes>
-            <Route element={<MainLayout />}>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/chat" element={<Chat />} />
-              <Route path="/knowledge" element={<Knowledge />} />
-              <Route path="/providers" element={<Providers />} />
-              <Route path="/prompts" element={<PromptsLibrary />} />
-              <Route path="/plugins" element={<Plugins />} />
-              <Route path="/maintenance" element={<Maintenance />} />
-              <Route path="/audit" element={<AuditLog />} />
-              <Route path="/settings" element={<Settings />} />
-            </Route>
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+          <AppWithAutoCheck>
+            <Routes>
+              <Route element={<MainLayout />}>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/chat" element={<Chat />} />
+                <Route path="/knowledge" element={<Knowledge />} />
+                <Route path="/providers" element={<Providers />} />
+                <Route path="/prompts" element={<PromptsLibrary />} />
+                <Route path="/plugins" element={<Plugins />} />
+                <Route path="/maintenance" element={<Maintenance />} />
+                <Route path="/audit" element={<AuditLog />} />
+                <Route path="/settings" element={<Settings />} />
+              </Route>
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </AppWithAutoCheck>
         </BrowserRouter>
       </div>
     </TooltipProvider>
