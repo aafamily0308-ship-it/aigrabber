@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { 
   Send, 
   Loader2, 
@@ -12,8 +12,8 @@ import {
   ChevronDown,
   FileText,
   Settings2,
-  Wifi,
-  WifiOff
+  Zap,
+  Brain
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useChatStore, ProviderType } from "@/stores/chatStore";
@@ -30,8 +30,14 @@ import { DataPreviewModal } from "@/components/chat/DataPreviewModal";
 import { MessageContextMenu } from "@/components/chat/MessageContextMenu";
 import { detectSensitiveData } from "@/lib/sensitiveDetector";
 import { estimateTokens } from "@/lib/documentParser";
-import { streamAI, isLocalProvider, needsApiKey } from "@/lib/localAIClient";
+import { streamAI, isLocalProvider, needsApiKey, AIProvider } from "@/lib/localAIClient";
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
+import { NetworkStatusIndicator } from "@/components/NetworkStatusIndicator";
+import { ProviderHealthIndicator } from "@/components/ProviderHealthIndicator";
+import { ContextStatsDisplay } from "@/components/ContextStatsDisplay";
+import { orchestrate } from "@/lib/modelOrchestrator";
+import { buildContextWindow, ContextMessage, getContextStats } from "@/lib/contextManager";
+import { getOnlineProviders } from "@/lib/providerHealthMonitor";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,6 +53,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 
 const providerOptions: { id: ProviderType; name: string; icon: typeof Cloud; type: 'local' | 'cloud' }[] = [
   { id: 'local-ollama', name: 'Ollama (Local)', icon: Cpu, type: 'local' },
@@ -63,6 +70,8 @@ export default function Chat() {
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
   const [showDataPreview, setShowDataPreview] = useState(false);
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
+  const [autoSelectProvider, setAutoSelectProvider] = useState(true);
+  const [lastOrchestration, setLastOrchestration] = useState<{ taskType: string; reasoning: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   
@@ -94,6 +103,34 @@ export default function Chat() {
     (selectedProvider.includes('openai') || selectedProvider === 'cloud-gpt5' ? cloudApiKeys.openai :
      selectedProvider.includes('google') || selectedProvider === 'cloud-gemini' ? cloudApiKeys.google :
      selectedProvider.includes('anthropic') ? cloudApiKeys.anthropic : false);
+
+  // Calculate context stats
+  const contextStats = useMemo(() => {
+    if (!activeConversation?.messages.length) {
+      return { usedTokens: 0, maxTokens: maxTokens || 4096, messageCount: 0 };
+    }
+    
+    const contextMessages: ContextMessage[] = activeConversation.messages.map((msg) => ({
+      role: msg.role as 'user' | 'assistant' | 'system',
+      content: msg.content,
+      timestamp: new Date(msg.timestamp || Date.now()),
+      priority: msg.role === 'system' ? 'high' as const : 'medium' as const,
+    }));
+    
+    const lastUserMessage = activeConversation.messages.filter(m => m.role === 'user').pop();
+    const contextWindow = buildContextWindow(
+      contextMessages, 
+      lastUserMessage?.content || '', 
+      selectedPrompt?.content
+    );
+    const stats = getContextStats(contextWindow);
+    
+    return {
+      usedTokens: stats.used,
+      maxTokens: contextWindow.maxTokens,
+      messageCount: stats.messageCount,
+    };
+  }, [activeConversation?.messages, selectedPrompt?.content, maxTokens]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -177,19 +214,53 @@ export default function Chat() {
     const docContext = buildContextFromDocs();
     const fullMessage = userMessage + docContext;
 
-    addMessage(convId, { role: 'user', content: userMessage, provider: selectedProvider });
+    // Determine provider - use orchestrator if auto-select is enabled
+    let providerToUse = selectedProvider;
+    const conversationHistory = activeConversation?.messages.map(m => m.content) || [];
+    
+    if (autoSelectProvider && !paranoidMode) {
+      // Get available providers (online ones)
+      const onlineProviders = getOnlineProviders();
+      const availableProviders = onlineProviders.length > 0 
+        ? onlineProviders 
+        : ['local-ollama', 'local-lmstudio'] as AIProvider[];
+      
+      // Use orchestrator to select best provider
+      const orchestration = orchestrate(fullMessage, conversationHistory, availableProviders, {
+        preferLocal: true,
+        fallbackToCloud: isOnline,
+      });
+      
+      providerToUse = orchestration.selectedProvider as ProviderType;
+      setSelectedProvider(providerToUse);
+      setLastOrchestration({
+        taskType: orchestration.taskType,
+        reasoning: orchestration.reasoning,
+      });
+      
+      // Show toast with selection info
+      toast({
+        title: `🧠 ${orchestration.taskType} detected`,
+        description: orchestration.reasoning,
+      });
+    } else {
+      setLastOrchestration(null);
+    }
+
+    const isCloudProviderSelected = !providerToUse.startsWith('local-');
+    addMessage(convId, { role: 'user', content: userMessage, provider: providerToUse });
     setIsStreaming(true);
 
     // Log to audit
     const sensitiveData = detectSensitiveData(fullMessage);
     addEntry({
       action: 'chat_request',
-      provider: selectedProvider,
-      providerType: isCloudProvider ? 'cloud' : 'local',
+      provider: providerToUse,
+      providerType: isCloudProviderSelected ? 'cloud' : 'local',
       tokensUsed: estimateTokens(fullMessage),
       dataSize: new Blob([fullMessage]).size,
       sensitiveDataDetected: sensitiveData.length > 0,
-      details: `Provider: ${selectedProvider}, Docs attached: ${attachedDocIds.length}`,
+      details: `Provider: ${providerToUse}, Auto: ${autoSelectProvider}, Docs: ${attachedDocIds.length}`,
     });
 
     try {
@@ -197,22 +268,22 @@ export default function Chat() {
       const messagesToSend = currentConv?.messages.map(m => ({ role: m.role as 'user' | 'assistant' | 'system', content: m.content })) || [];
       messagesToSend.push({ role: 'user', content: fullMessage });
 
-      addMessage(convId!, { role: 'assistant', content: '', provider: selectedProvider });
+      addMessage(convId!, { role: 'assistant', content: '', provider: providerToUse });
 
       // Determine API key for cloud providers
       let apiKey: string | undefined;
-      if (selectedProvider === 'cloud-gemini' || selectedProvider === 'cloud-google' as any) {
+      if (providerToUse === 'cloud-gemini' || providerToUse === 'cloud-google' as any) {
         apiKey = cloudApiKeys.google;
-      } else if (selectedProvider === 'cloud-gpt5' || selectedProvider === 'cloud-openai' as any) {
+      } else if (providerToUse === 'cloud-gpt5' || providerToUse === 'cloud-openai' as any) {
         apiKey = cloudApiKeys.openai;
-      } else if (selectedProvider === 'cloud-anthropic' as any) {
+      } else if (providerToUse === 'cloud-anthropic' as any) {
         apiKey = cloudApiKeys.anthropic;
       }
 
       let assistantContent = "";
 
       await streamAI({
-        provider: selectedProvider as any,
+        provider: providerToUse as any,
         messages: messagesToSend,
         apiKey,
         temperature,
@@ -308,9 +379,37 @@ export default function Chat() {
       <div className="flex-1 flex flex-col">
         {/* Header */}
         <div className="h-16 border-b border-border flex items-center justify-between px-6 gap-4">
-          <h1 className="text-xl font-semibold text-foreground">AI Chat</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-xl font-semibold text-foreground">AI Chat</h1>
+            <NetworkStatusIndicator />
+            <ProviderHealthIndicator />
+            <ContextStatsDisplay 
+              usedTokens={contextStats.usedTokens}
+              maxTokens={contextStats.maxTokens}
+              messageCount={contextStats.messageCount}
+            />
+          </div>
           
           <div className="flex items-center gap-3">
+            {/* Auto-select toggle */}
+            <Button
+              variant={autoSelectProvider ? "default" : "outline"}
+              size="sm"
+              className="gap-2"
+              onClick={() => setAutoSelectProvider(!autoSelectProvider)}
+            >
+              <Brain className="w-4 h-4" />
+              {autoSelectProvider ? "Auto" : "Manual"}
+            </Button>
+
+            {/* Last orchestration info */}
+            {lastOrchestration && autoSelectProvider && (
+              <Badge variant="secondary" className="text-xs">
+                <Zap className="w-3 h-3 mr-1" />
+                {lastOrchestration.taskType}
+              </Badge>
+            )}
+
             {/* System Prompt Selector */}
             <Select
               value={selectedPromptId || 'none'}
@@ -333,12 +432,12 @@ export default function Chat() {
             {/* Provider Selector */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="gap-2">
+                <Button variant="outline" className="gap-2" disabled={autoSelectProvider}>
                   {currentProvider && (
                     <>
                       <currentProvider.icon className="w-4 h-4" />
-                      {currentProvider.name}
-                      {currentProvider.type === 'local' && (
+                      {autoSelectProvider ? "Auto" : currentProvider.name}
+                      {currentProvider.type === 'local' && !autoSelectProvider && (
                         <Shield className="w-3 h-3 text-success ml-1" />
                       )}
                     </>
@@ -351,7 +450,10 @@ export default function Chat() {
                 {providerOptions.filter(p => p.type === 'local').map((provider) => (
                   <DropdownMenuItem
                     key={provider.id}
-                    onClick={() => setSelectedProvider(provider.id)}
+                    onClick={() => {
+                      setAutoSelectProvider(false);
+                      setSelectedProvider(provider.id);
+                    }}
                     className={cn(selectedProvider === provider.id && "bg-primary/10")}
                   >
                     <provider.icon className="w-4 h-4 mr-2" />
@@ -364,7 +466,12 @@ export default function Chat() {
                 {providerOptions.filter(p => p.type === 'cloud').map((provider) => (
                   <DropdownMenuItem
                     key={provider.id}
-                    onClick={() => !paranoidMode && setSelectedProvider(provider.id)}
+                    onClick={() => {
+                      if (!paranoidMode) {
+                        setAutoSelectProvider(false);
+                        setSelectedProvider(provider.id);
+                      }
+                    }}
                     className={cn(
                       selectedProvider === provider.id && "bg-primary/10",
                       paranoidMode && "opacity-50 cursor-not-allowed"
