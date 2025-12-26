@@ -8,8 +8,8 @@ import {
   X,
   Zap,
   Settings,
-  ExternalLink,
-  Shield
+  Shield,
+  ChevronDown
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useProviderStore, Provider } from "@/stores/providerStore";
@@ -17,9 +17,30 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+
+interface OllamaModel {
+  name: string;
+  size: number;
+  modified_at: string;
+}
 
 export default function Providers() {
   const [checking, setChecking] = useState<string | null>(null);
+  const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>([]);
+  const [lmStudioModels, setLmStudioModels] = useState<string[]>([]);
   const { toast } = useToast();
   
   const {
@@ -30,6 +51,35 @@ export default function Providers() {
     updateProviderModel,
   } = useProviderStore();
 
+  const fetchOllamaModels = async (endpoint: string) => {
+    try {
+      const response = await fetch(`${endpoint}/api/tags`);
+      if (response.ok) {
+        const data = await response.json();
+        setOllamaModels(data.models || []);
+        return data.models || [];
+      }
+    } catch (error) {
+      console.error('Failed to fetch Ollama models:', error);
+    }
+    return [];
+  };
+
+  const fetchLmStudioModels = async (endpoint: string) => {
+    try {
+      const response = await fetch(`${endpoint}/v1/models`);
+      if (response.ok) {
+        const data = await response.json();
+        const models = data.data?.map((m: any) => m.id) || [];
+        setLmStudioModels(models);
+        return models;
+      }
+    } catch (error) {
+      console.error('Failed to fetch LM Studio models:', error);
+    }
+    return [];
+  };
+
   const checkProvider = async (provider: Provider) => {
     setChecking(provider.id);
     updateProviderStatus(provider.id, 'checking');
@@ -39,36 +89,31 @@ export default function Providers() {
         const startTime = Date.now();
         
         if (provider.id === 'ollama') {
-          const response = await fetch(`${provider.endpoint}/api/tags`, {
-            method: 'GET',
-          });
-          if (response.ok) {
+          const models = await fetchOllamaModels(provider.endpoint);
+          if (models.length >= 0) {
             const latency = Date.now() - startTime;
             updateProviderStatus(provider.id, 'online', latency);
             toast({
               title: "Ollama Connected",
-              description: `Response time: ${latency}ms`,
+              description: `Response time: ${latency}ms • ${models.length} models available`,
             });
           } else {
             throw new Error('Not available');
           }
         } else if (provider.id === 'lmstudio') {
-          const response = await fetch(`${provider.endpoint}/v1/models`, {
-            method: 'GET',
-          });
-          if (response.ok) {
+          const models = await fetchLmStudioModels(provider.endpoint);
+          if (models.length >= 0) {
             const latency = Date.now() - startTime;
             updateProviderStatus(provider.id, 'online', latency);
             toast({
               title: "LM Studio Connected",
-              description: `Response time: ${latency}ms`,
+              description: `Response time: ${latency}ms • ${models.length} models loaded`,
             });
           } else {
             throw new Error('Not available');
           }
         }
       } else {
-        // Cloud providers are always online
         updateProviderStatus(provider.id, 'online', 50);
         toast({
           title: `${provider.name} Available`,
@@ -96,7 +141,6 @@ export default function Providers() {
   };
 
   useEffect(() => {
-    // Check local providers on mount
     providers
       .filter(p => p.type === 'local')
       .forEach(p => checkProvider(p));
@@ -181,6 +225,7 @@ export default function Providers() {
               onToggle={() => toggleProvider(provider.id)}
               onUpdateEndpoint={(endpoint) => updateProviderEndpoint(provider.id, endpoint)}
               onUpdateModel={(model) => updateProviderModel(provider.id, model)}
+              availableModels={provider.id === 'ollama' ? ollamaModels.map(m => m.name) : lmStudioModels}
             />
           ))}
         </div>
@@ -202,6 +247,7 @@ export default function Providers() {
               onToggle={() => toggleProvider(provider.id)}
               onUpdateEndpoint={(endpoint) => updateProviderEndpoint(provider.id, endpoint)}
               onUpdateModel={(model) => updateProviderModel(provider.id, model)}
+              availableModels={[]}
             />
           ))}
         </div>
@@ -217,6 +263,7 @@ interface ProviderCardProps {
   onToggle: () => void;
   onUpdateEndpoint: (endpoint: string) => void;
   onUpdateModel: (model: string) => void;
+  availableModels: string[];
 }
 
 function ProviderCard({ 
@@ -226,8 +273,9 @@ function ProviderCard({
   onToggle,
   onUpdateEndpoint,
   onUpdateModel,
+  availableModels,
 }: ProviderCardProps) {
-  const [showSettings, setShowSettings] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
 
   return (
     <div className={cn(
@@ -274,54 +322,74 @@ function ProviderCard({
         </div>
       )}
 
-      {showSettings && provider.type === 'local' && (
-        <div className="space-y-3 mb-4 pt-4 border-t border-border">
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Endpoint</label>
-            <Input
-              value={provider.endpoint}
-              onChange={(e) => onUpdateEndpoint(e.target.value)}
-              placeholder="http://localhost:11434"
-              className="text-sm"
-            />
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Model</label>
-            <Input
-              value={provider.model || ''}
-              onChange={(e) => onUpdateModel(e.target.value)}
-              placeholder="llama3.2"
-              className="text-sm"
-            />
-          </div>
-        </div>
-      )}
-
-      <div className="flex items-center gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onCheck}
-          disabled={checking}
-          className="flex-1"
-        >
-          {checking ? (
-            <RefreshCw className="w-4 h-4 animate-spin mr-2" />
-          ) : (
-            <Zap className="w-4 h-4 mr-2" />
-          )}
-          Test Connection
-        </Button>
-        {provider.type === 'local' && (
+      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+        <div className="flex items-center gap-2">
           <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setShowSettings(!showSettings)}
+            variant="outline"
+            size="sm"
+            onClick={onCheck}
+            disabled={checking}
+            className="flex-1"
           >
-            <Settings className="w-4 h-4" />
+            {checking ? (
+              <RefreshCw className="w-4 h-4 animate-spin mr-2" />
+            ) : (
+              <Zap className="w-4 h-4 mr-2" />
+            )}
+            Test Connection
           </Button>
-        )}
-      </div>
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" size="icon">
+              <Settings className={cn("w-4 h-4 transition-transform", isOpen && "rotate-90")} />
+            </Button>
+          </CollapsibleTrigger>
+        </div>
+
+        <CollapsibleContent className="mt-4 space-y-3 pt-4 border-t border-border">
+          {provider.type === 'local' && (
+            <>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Endpoint</label>
+                <Input
+                  value={provider.endpoint}
+                  onChange={(e) => onUpdateEndpoint(e.target.value)}
+                  placeholder="http://localhost:11434"
+                  className="text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Model</label>
+                {availableModels.length > 0 ? (
+                  <Select value={provider.model || ''} onValueChange={onUpdateModel}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select model" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableModels.map((model) => (
+                        <SelectItem key={model} value={model}>
+                          {model}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    value={provider.model || ''}
+                    onChange={(e) => onUpdateModel(e.target.value)}
+                    placeholder="llama3.2"
+                    className="text-sm"
+                  />
+                )}
+              </div>
+            </>
+          )}
+          {provider.type === 'cloud' && (
+            <p className="text-sm text-muted-foreground">
+              Cloud provider settings are managed automatically.
+            </p>
+          )}
+        </CollapsibleContent>
+      </Collapsible>
     </div>
   );
 }
