@@ -356,6 +356,7 @@ await importAllData(jsonData);
 | `calculator` | Calculator | calculate |
 | `text-utils` | Text Utilities | word_count, text_transform |
 | `system-info` | System Info | get_system_info |
+| `web-search` | Web Search | web_search (DuckDuckGo API) |
 
 ### Создание плагина
 
