@@ -282,6 +282,23 @@ curl http://localhost:8080/v1/models
 # 🤖 AI Command Center v2.0.0
 # 📅 Build: 2024-01-15
 # ...
+
+# 6. Полный аудит системы (NEW!)
+/audit
+# 🔍 ПОЛНЫЙ АУДИТ СИСТЕМЫ
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 📊 ПРОВАЙДЕРЫ AI: 5 активных, 2 онлайн
+# 💾 ХРАНИЛИЩЕ: IndexedDB ✅, LocalStorage ✅
+# 💬 ДАННЫЕ: 150 сообщений, 3 разговора
+# 🌐 ВЕБ-ПОИСК: ✅ Доступен (SearXNG, Proxy)
+# ⚙️ НАСТРОЙКИ: Temperature 0.7, Max Tokens 4096
+# 🔑 API КЛЮЧИ: OpenAI ❌, Google ✅, Anthropic ❌
+
+# 7. Веб-поиск (NEW!)
+/search React hooks tutorial
+# 🔍 Результаты веб-поиска по запросу "React hooks tutorial" (SearXNG):
+# 1. **React Hooks Tutorial** 📎 https://reactjs.org/...
+# 2. **Learn React Hooks** 📎 https://...
 ```
 
 ### Метод 2: Страница Maintenance
@@ -690,7 +707,73 @@ await importAllData(jsonData);
 | `calculator` | Calculator | calculate |
 | `text-utils` | Text Utilities | word_count, text_transform |
 | `system-info` | System Info | get_system_info |
-| `web-search` | Web Search | web_search (DuckDuckGo API) |
+| `web-search` | Web Search | web_search, fetch_page |
+
+### Веб-поиск (независимый от Lovable)
+
+Система имеет **полностью автономный веб-поиск** без зависимостей от Lovable Cloud или Edge Functions.
+
+#### Архитектура
+```
+Клиент → SearXNG API (прямой) → Результаты
+       → CORS-прокси → DuckDuckGo HTML → Парсинг
+       → CORS-прокси → Google → Парсинг
+```
+
+#### Поддерживаемые источники (в порядке приоритета):
+1. **SearXNG** - публичные инстансы (без прокси, JSON API)
+2. **DuckDuckGo** - HTML парсинг через CORS-прокси
+3. **Google** - HTML парсинг через CORS-прокси
+
+#### CORS-прокси (автоматический выбор):
+- `corsproxy.io`
+- `allorigins.win`
+- `cors-anywhere.herokuapp.com`
+
+#### Использование через консоль:
+```bash
+# Веб-поиск
+/search React hooks tutorial
+
+# Результат:
+🔍 Результаты веб-поиска по запросу "React hooks tutorial" (SearXNG):
+
+1. **React Hooks Tutorial**
+   📎 https://reactjs.org/docs/hooks-intro.html
+   Learn how to use hooks in React...
+```
+
+#### Использование через API:
+```typescript
+import { webSearch, fetchPageContent } from '@/lib/webSearchService';
+
+// Поиск
+const results = await webSearch('React hooks', { maxResults: 5 });
+if (results.success) {
+  results.results.forEach(r => console.log(r.title, r.url));
+}
+
+// Загрузка страницы
+const content = await fetchPageContent('https://example.com', { maxLength: 5000 });
+```
+
+#### Использование через AI плагин:
+```javascript
+// AI может вызвать через плагин web-search:
+{
+  tool: 'web_search',
+  args: { query: 'latest React 19 features', max_results: 5 }
+}
+
+{
+  tool: 'fetch_page',
+  args: { url: 'https://react.dev/blog/2024', max_length: 3000 }
+}
+```
+
+#### Кэширование:
+- Результаты кэшируются на 5 минут
+- Очистка: `clearSearchCache()` или перезагрузка страницы
 
 ### Создание плагина
 

@@ -402,140 +402,106 @@ export const builtInPlugins: Plugin[] = [
     metadata: {
       id: 'web-search',
       name: 'Web Search',
-      version: '1.0.0',
-      description: 'Search the web using DuckDuckGo Instant Answer API',
+      version: '2.0.0',
+      description: 'Полноценный веб-поиск через SearXNG/DuckDuckGo/Google с CORS-прокси',
       category: 'tools',
       icon: '🔍',
     },
     capabilities: [
       { type: 'function', name: 'search', description: 'Search the web for information' },
+      { type: 'function', name: 'fetch_page', description: 'Fetch content from a web page' },
     ],
     tools: [
       {
         name: 'web_search',
-        description: 'Search the web using DuckDuckGo Instant Answer API. Returns instant answers, definitions, and related topics.',
+        description: 'Поиск в интернете. Возвращает релевантные результаты с заголовками, URL и описаниями.',
         parameters: {
           type: 'object',
           properties: {
             query: {
               type: 'string',
-              description: 'Search query',
+              description: 'Поисковый запрос',
               required: true,
+            },
+            max_results: {
+              type: 'number',
+              description: 'Максимальное количество результатов (по умолчанию 5)',
             },
           },
           required: ['query'],
         },
         execute: async (args) => {
           const query = args.query as string;
+          const maxResults = (args.max_results as number) || 5;
           
           if (!query.trim()) {
-            throw new Error('Search query cannot be empty');
+            throw new Error('Поисковый запрос не может быть пустым');
           }
           
           try {
-            // DuckDuckGo Instant Answer API (no API key required, CORS-friendly via proxy)
-            const encodedQuery = encodeURIComponent(query);
-            const response = await fetch(
-              `https://api.duckduckgo.com/?q=${encodedQuery}&format=json&no_html=1&skip_disambig=1`,
-              {
-                method: 'GET',
-                headers: {
-                  'Accept': 'application/json',
-                },
-              }
-            );
+            const { webSearch, formatSearchResultsForAI } = await import('@/lib/webSearchService');
+            const response = await webSearch(query, { maxResults });
             
-            if (!response.ok) {
-              throw new Error(`Search failed: ${response.status}`);
-            }
-            
-            const data = await response.json();
-            
-            // Parse the response
-            const result: {
-              query: string;
-              abstract?: string;
-              abstractSource?: string;
-              abstractURL?: string;
-              answer?: string;
-              answerType?: string;
-              definition?: string;
-              definitionSource?: string;
-              heading?: string;
-              image?: string;
-              relatedTopics?: Array<{ text: string; url: string }>;
-              results?: Array<{ title: string; url: string; text: string }>;
-            } = {
-              query,
-            };
-            
-            // Main abstract/answer
-            if (data.Abstract) {
-              result.abstract = data.Abstract;
-              result.abstractSource = data.AbstractSource;
-              result.abstractURL = data.AbstractURL;
-            }
-            
-            if (data.Answer) {
-              result.answer = data.Answer;
-              result.answerType = data.AnswerType;
-            }
-            
-            if (data.Definition) {
-              result.definition = data.Definition;
-              result.definitionSource = data.DefinitionSource;
-            }
-            
-            if (data.Heading) {
-              result.heading = data.Heading;
-            }
-            
-            if (data.Image) {
-              result.image = data.Image.startsWith('http') ? data.Image : `https://duckduckgo.com${data.Image}`;
-            }
-            
-            // Related topics
-            if (data.RelatedTopics && Array.isArray(data.RelatedTopics)) {
-              result.relatedTopics = data.RelatedTopics
-                .filter((topic: any) => topic.Text && topic.FirstURL)
-                .slice(0, 5)
-                .map((topic: any) => ({
-                  text: topic.Text,
-                  url: topic.FirstURL,
-                }));
-            }
-            
-            // Infobox results
-            if (data.Results && Array.isArray(data.Results)) {
-              result.results = data.Results
-                .slice(0, 5)
-                .map((r: any) => ({
-                  title: r.Text || r.FirstURL,
-                  url: r.FirstURL,
-                  text: r.Text || '',
-                }));
-            }
-            
-            // Check if we got any meaningful results
-            const hasResults = result.abstract || result.answer || result.definition || 
-                              (result.relatedTopics && result.relatedTopics.length > 0) ||
-                              (result.results && result.results.length > 0);
-            
-            if (!hasResults) {
+            if (!response.success) {
               return {
+                success: false,
                 query,
-                message: 'No instant answers found. Try a more specific query or a different search term.',
-                suggestion: 'The DuckDuckGo Instant Answer API works best with factual queries, definitions, and well-known topics.',
+                error: response.error,
+                suggestion: 'Попробуйте другой поисковый запрос или проверьте интернет-соединение.',
               };
             }
             
-            return result;
+            return {
+              success: true,
+              query,
+              source: response.source,
+              resultsCount: response.results.length,
+              results: response.results,
+              formatted: formatSearchResultsForAI(response),
+            };
           } catch (error: any) {
-            // Handle network errors gracefully
-            if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-              throw new Error('Network error: Unable to reach DuckDuckGo API. Check your internet connection.');
-            }
-            throw error;
+            throw new Error(`Ошибка поиска: ${error.message}`);
+          }
+        },
+      },
+      {
+        name: 'fetch_page',
+        description: 'Получить текстовое содержимое веб-страницы по URL.',
+        parameters: {
+          type: 'object',
+          properties: {
+            url: {
+              type: 'string',
+              description: 'URL страницы для загрузки',
+              required: true,
+            },
+            max_length: {
+              type: 'number',
+              description: 'Максимальная длина контента (по умолчанию 5000 символов)',
+            },
+          },
+          required: ['url'],
+        },
+        execute: async (args) => {
+          const url = args.url as string;
+          const maxLength = (args.max_length as number) || 5000;
+          
+          if (!url.trim()) {
+            throw new Error('URL не может быть пустым');
+          }
+          
+          try {
+            const { fetchPageContent } = await import('@/lib/webSearchService');
+            const content = await fetchPageContent(url, { maxLength });
+            
+            return {
+              success: true,
+              url,
+              contentLength: content.length,
+              content,
+            };
+          } catch (error: any) {
+            throw new Error(`Ошибка загрузки страницы: ${error.message}`);
           }
         },
       },
