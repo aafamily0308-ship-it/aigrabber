@@ -11,7 +11,8 @@ import {
   History,
   FileText,
   Puzzle,
-  Wrench
+  Wrench,
+  Terminal
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -20,6 +21,7 @@ import { SystemHealthIndicator } from "@/components/SystemHealthIndicator";
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
   { to: "/chat", icon: MessageSquare, label: "AI Chat" },
+  { to: "/console", icon: Terminal, label: "Console" },
   { to: "/knowledge", icon: BookOpen, label: "Knowledge Base" },
   { to: "/prompts", icon: FileText, label: "Prompts" },
   { to: "/plugins", icon: Puzzle, label: "Plugins & MCP" },

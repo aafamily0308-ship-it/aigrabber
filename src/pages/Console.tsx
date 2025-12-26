@@ -41,8 +41,17 @@ Hotkeys: Ctrl+L очистить, ↑/↓ история, Tab автодопол
   const inputRef = useRef<HTMLInputElement>(null);
   const outputRef = useRef<HTMLDivElement>(null);
   
-  const { providers, updateProviderStatus } = useProviderStore();
-  const { currentConversation, addMessage, clearMessages, setCurrentConversation } = useChatStore();
+  const { providers } = useProviderStore();
+  const { 
+    conversations, 
+    activeConversationId, 
+    addMessage, 
+    clearConversations,
+    createConversation,
+    setActiveConversation 
+  } = useChatStore();
+  
+  const currentConversation = conversations.find(c => c.id === activeConversationId);
   
   const [currentProvider, setCurrentProvider] = useState(() => {
     const online = providers.find(p => p.status === 'online' && p.isActive);
@@ -94,8 +103,7 @@ Hotkeys: Ctrl+L очистить, ↑/↓ история, Tab автодопол
       await handleSendMessage(message);
     },
     clearHistory: () => {
-      clearMessages();
-      setCurrentConversation(null);
+      clearConversations();
     },
     getProviders: () => providers.map(p => ({
       id: p.id,
@@ -124,11 +132,13 @@ Hotkeys: Ctrl+L очистить, ↑/↓ история, Tab автодопол
       }
       
       // Add user message to store
-      addMessage({
-        id: Date.now().toString(),
+      let convId = activeConversationId;
+      if (!convId) {
+        convId = createConversation();
+      }
+      addMessage(convId, {
         role: 'user',
         content: message,
-        timestamp: new Date(),
       });
       
       // Stream response
@@ -168,12 +178,12 @@ Hotkeys: Ctrl+L очистить, ↑/↓ история, Tab автодопол
           ));
           
           // Add assistant message to store
-          addMessage({
-            id: Date.now().toString(),
-            role: 'assistant',
-            content: response,
-            timestamp: new Date(),
-          });
+          if (convId) {
+            addMessage(convId, {
+              role: 'assistant',
+              content: response,
+            });
+          }
         },
         onError: (error) => {
           setLines(prev => prev.map(line => 
