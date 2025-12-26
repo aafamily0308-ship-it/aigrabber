@@ -1,45 +1,46 @@
 // Provider Health Monitor - Real-time monitoring with auto-failover
 // Phase 2: Intelligent Core
 
-import { AIProvider, testProvider, isLocalProvider } from './localAIClient';
-import { CloudApiKeys } from '@/stores/settingsStore';
+import { useProviderStore, Provider } from '@/stores/providerStore';
+import { providerRegistry } from '@/lib/providers';
+
+export type ProviderId = string;
 
 export interface ProviderHealth {
-  provider: AIProvider;
+  providerId: ProviderId;
   status: 'online' | 'offline' | 'degraded' | 'unknown';
-  latency: number | null;        // ms
+  latency: number | null;
   lastCheck: Date | null;
   lastSuccess: Date | null;
   failureCount: number;
-  successRate: number;           // 0-100%
+  successRate: number;
   message: string;
 }
 
 export interface HealthMonitorConfig {
-  checkIntervalMs: number;       // How often to check
-  timeoutMs: number;             // Request timeout
-  failureThreshold: number;      // Failures before marking offline
-  recoveryThreshold: number;     // Successes before marking online
-  historySize: number;           // Number of checks to keep for rate
+  checkIntervalMs: number;
+  timeoutMs: number;
+  failureThreshold: number;
+  recoveryThreshold: number;
+  historySize: number;
 }
 
 export const defaultHealthConfig: HealthMonitorConfig = {
-  checkIntervalMs: 30000,        // 30 seconds
-  timeoutMs: 5000,               // 5 seconds
+  checkIntervalMs: 30000,
+  timeoutMs: 5000,
   failureThreshold: 3,
   recoveryThreshold: 2,
   historySize: 10,
 };
 
 // Store health history per provider
-const healthHistory: Map<AIProvider, boolean[]> = new Map();
-const healthState: Map<AIProvider, ProviderHealth> = new Map();
+const healthHistory: Map<ProviderId, boolean[]> = new Map();
+const healthState: Map<ProviderId, ProviderHealth> = new Map();
 
-// Initialize health state for a provider
-function initProvider(provider: AIProvider): ProviderHealth {
-  if (!healthState.has(provider)) {
-    healthState.set(provider, {
-      provider,
+function initProvider(providerId: ProviderId): ProviderHealth {
+  if (!healthState.has(providerId)) {
+    healthState.set(providerId, {
+      providerId,
       status: 'unknown',
       latency: null,
       lastCheck: null,
@@ -48,36 +49,32 @@ function initProvider(provider: AIProvider): ProviderHealth {
       successRate: 0,
       message: 'Not checked yet',
     });
-    healthHistory.set(provider, []);
+    healthHistory.set(providerId, []);
   }
-  return healthState.get(provider)!;
+  return healthState.get(providerId)!;
 }
 
-// Update provider health
 function updateHealth(
-  provider: AIProvider,
+  providerId: ProviderId,
   success: boolean,
   latency: number | null,
   message: string,
   config: HealthMonitorConfig = defaultHealthConfig
 ): ProviderHealth {
-  const health = initProvider(provider);
-  const history = healthHistory.get(provider) || [];
+  const health = initProvider(providerId);
+  const history = healthHistory.get(providerId) || [];
 
-  // Update history
   history.push(success);
   if (history.length > config.historySize) {
     history.shift();
   }
-  healthHistory.set(provider, history);
+  healthHistory.set(providerId, history);
 
-  // Calculate success rate
   const successCount = history.filter(Boolean).length;
   health.successRate = history.length > 0 
     ? Math.round((successCount / history.length) * 100) 
     : 0;
 
-  // Update state
   health.lastCheck = new Date();
   health.latency = latency;
   health.message = message;
@@ -86,7 +83,6 @@ function updateHealth(
     health.lastSuccess = new Date();
     health.failureCount = 0;
     
-    // Check if we should mark as online
     const recentSuccesses = history.slice(-config.recoveryThreshold).filter(Boolean).length;
     if (recentSuccesses >= config.recoveryThreshold || health.status === 'unknown') {
       health.status = 'online';
@@ -96,7 +92,6 @@ function updateHealth(
   } else {
     health.failureCount++;
     
-    // Check if we should mark as offline
     if (health.failureCount >= config.failureThreshold) {
       health.status = 'offline';
     } else if (health.status === 'online') {
@@ -104,120 +99,119 @@ function updateHealth(
     }
   }
 
-  healthState.set(provider, health);
+  healthState.set(providerId, health);
   return health;
 }
 
-// Check single provider health
 export async function checkProviderHealth(
-  provider: AIProvider,
+  providerId: ProviderId,
+  endpoint?: string,
   apiKey?: string,
   config: HealthMonitorConfig = defaultHealthConfig
 ): Promise<ProviderHealth> {
   const startTime = Date.now();
   
   try {
-    const result = await testProvider(provider, apiKey);
+    const plugin = providerRegistry.get(providerId);
+    if (!plugin) {
+      return updateHealth(providerId, false, null, 'Provider plugin not found', config);
+    }
+    
+    const testEndpoint = endpoint || plugin.defaultEndpoint;
+    const result = await plugin.test(testEndpoint, apiKey);
     const latency = Date.now() - startTime;
     
-    return updateHealth(provider, result.success, latency, result.message, config);
+    return updateHealth(
+      providerId, 
+      result.online, 
+      latency, 
+      result.error || (result.online ? 'Connected' : 'Connection failed'),
+      config
+    );
   } catch (error) {
     const latency = Date.now() - startTime;
     const message = error instanceof Error ? error.message : 'Check failed';
     
-    return updateHealth(provider, false, latency, message, config);
+    return updateHealth(providerId, false, latency, message, config);
   }
 }
 
-// Check all providers
 export async function checkAllProviders(
-  cloudApiKeys: CloudApiKeys = {},
   config: HealthMonitorConfig = defaultHealthConfig
-): Promise<Map<AIProvider, ProviderHealth>> {
-  const providers: { provider: AIProvider; apiKey?: string }[] = [
-    { provider: 'local-ollama' },
-    { provider: 'local-lmstudio' },
-    { provider: 'cloud-openai', apiKey: cloudApiKeys.openai },
-    { provider: 'cloud-google', apiKey: cloudApiKeys.google },
-    { provider: 'cloud-anthropic', apiKey: cloudApiKeys.anthropic },
-  ];
-
-  const checks = providers.map(({ provider, apiKey }) =>
-    checkProviderHealth(provider, apiKey, config)
+): Promise<Map<ProviderId, ProviderHealth>> {
+  const providers = useProviderStore.getState().providers;
+  
+  const checks = providers.map(provider =>
+    checkProviderHealth(
+      provider.id, 
+      provider.endpoint, 
+      provider.apiKey,
+      config
+    )
   );
 
   await Promise.all(checks);
+  
+  // Update store with health statuses
+  const store = useProviderStore.getState();
+  healthState.forEach((health, id) => {
+    const storeStatus = health.status === 'unknown' ? 'checking' : 
+                        health.status === 'degraded' ? 'online' : health.status;
+    store.updateProviderStatus(id, storeStatus, health.latency || undefined);
+  });
+  
   return healthState;
 }
 
-// Get current health for a provider
-export function getProviderHealth(provider: AIProvider): ProviderHealth {
-  return initProvider(provider);
+export function getProviderHealth(providerId: ProviderId): ProviderHealth {
+  return initProvider(providerId);
 }
 
-// Get all provider health statuses
-export function getAllProviderHealth(): Map<AIProvider, ProviderHealth> {
+export function getAllProviderHealth(): Map<ProviderId, ProviderHealth> {
   return healthState;
 }
 
-// Get online providers
-export function getOnlineProviders(): AIProvider[] {
-  return Array.from(healthState.entries())
-    .filter(([_, health]) => health.status === 'online' || health.status === 'degraded')
-    .map(([provider]) => provider);
+export function getOnlineProviders(): ProviderId[] {
+  const storeProviders = useProviderStore.getState().providers;
+  return storeProviders
+    .filter(p => p.status === 'online' && p.isActive)
+    .map(p => p.id);
 }
 
-// Get best available provider
-export function getBestProvider(preferLocal: boolean = true): AIProvider | null {
-  const online = getOnlineProviders();
+export function getBestProvider(preferLocal: boolean = true): ProviderId | null {
+  const providers = useProviderStore.getState().providers
+    .filter(p => p.status === 'online' && p.isActive);
   
-  if (online.length === 0) return null;
+  if (providers.length === 0) return null;
   
-  // Sort by latency and preference
-  const sorted = online
-    .map(provider => ({
-      provider,
-      health: healthState.get(provider)!,
-      isLocal: isLocalProvider(provider),
-    }))
-    .sort((a, b) => {
-      // Prefer local if configured
-      if (preferLocal) {
-        if (a.isLocal && !b.isLocal) return -1;
-        if (!a.isLocal && b.isLocal) return 1;
-      }
-      
-      // Then by status (online > degraded)
-      if (a.health.status === 'online' && b.health.status === 'degraded') return -1;
-      if (a.health.status === 'degraded' && b.health.status === 'online') return 1;
-      
-      // Then by latency
-      const aLatency = a.health.latency ?? Infinity;
-      const bLatency = b.health.latency ?? Infinity;
-      return aLatency - bLatency;
-    });
+  const sorted = providers.sort((a, b) => {
+    if (preferLocal) {
+      if (a.type === 'local' && b.type !== 'local') return -1;
+      if (a.type !== 'local' && b.type === 'local') return 1;
+    }
+    
+    const aLatency = a.latency ?? Infinity;
+    const bLatency = b.latency ?? Infinity;
+    return aLatency - bLatency;
+  });
 
-  return sorted[0]?.provider || null;
+  return sorted[0]?.id || null;
 }
 
-// Health check interval management
 let healthCheckInterval: ReturnType<typeof setInterval> | null = null;
 
 export function startHealthMonitor(
-  cloudApiKeys: CloudApiKeys = {},
   config: HealthMonitorConfig = defaultHealthConfig,
-  onUpdate?: (health: Map<AIProvider, ProviderHealth>) => void
+  onUpdate?: (health: Map<ProviderId, ProviderHealth>) => void
 ): void {
   stopHealthMonitor();
   
-  // Initial check
-  checkAllProviders(cloudApiKeys, config).then(health => {
+  checkAllProviders(config).then(health => {
     onUpdate?.(health);
   });
   
-  // Periodic checks
   healthCheckInterval = setInterval(async () => {
-    const health = await checkAllProviders(cloudApiKeys, config);
+    const health = await checkAllProviders(config);
     onUpdate?.(health);
   }, config.checkIntervalMs);
 }
@@ -229,7 +223,6 @@ export function stopHealthMonitor(): void {
   }
 }
 
-// Get health summary for UI
 export function getHealthSummary(): {
   total: number;
   online: number;
@@ -237,13 +230,19 @@ export function getHealthSummary(): {
   degraded: number;
   unknown: number;
 } {
-  const statuses = Array.from(healthState.values()).map(h => h.status);
+  const providers = useProviderStore.getState().providers;
   
   return {
-    total: statuses.length,
-    online: statuses.filter(s => s === 'online').length,
-    offline: statuses.filter(s => s === 'offline').length,
-    degraded: statuses.filter(s => s === 'degraded').length,
-    unknown: statuses.filter(s => s === 'unknown').length,
+    total: providers.length,
+    online: providers.filter(p => p.status === 'online').length,
+    offline: providers.filter(p => p.status === 'offline').length,
+    degraded: 0,
+    unknown: providers.filter(p => p.status === 'checking').length,
   };
+}
+
+// Helper for backward compatibility
+export function isLocalProvider(providerId: ProviderId): boolean {
+  const provider = useProviderStore.getState().providers.find(p => p.id === providerId);
+  return provider?.type === 'local';
 }

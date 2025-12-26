@@ -1,20 +1,23 @@
 // Model Orchestrator - Automatic model selection based on task type
 // Phase 2: Intelligent Core
 
-import { AIProvider, isLocalProvider } from './localAIClient';
+import { useProviderStore } from '@/stores/providerStore';
+import { providerRegistry } from '@/lib/providers';
+
+export type ProviderId = string;
 
 export type TaskType = 
-  | 'code'           // Programming, debugging
-  | 'creative'       // Writing, brainstorming
-  | 'analysis'       // Data analysis, reasoning
-  | 'conversation'   // General chat
-  | 'translation'    // Language translation
-  | 'summarization'  // Text summarization
-  | 'long-context'   // Large documents
-  | 'quick';         // Fast, simple responses
+  | 'code'
+  | 'creative'
+  | 'analysis'
+  | 'conversation'
+  | 'translation'
+  | 'summarization'
+  | 'long-context'
+  | 'quick';
 
 export interface ModelCapabilities {
-  provider: AIProvider;
+  providerId: ProviderId;
   name: string;
   strengths: TaskType[];
   contextWindow: number;
@@ -25,8 +28,9 @@ export interface ModelCapabilities {
 
 // Model registry with capabilities
 export const modelRegistry: ModelCapabilities[] = [
+  // Local providers
   {
-    provider: 'local-ollama',
+    providerId: 'ollama',
     name: 'Ollama (Llama 3.2)',
     strengths: ['code', 'conversation', 'quick'],
     contextWindow: 8192,
@@ -35,7 +39,7 @@ export const modelRegistry: ModelCapabilities[] = [
     isLocal: true,
   },
   {
-    provider: 'local-lmstudio',
+    providerId: 'lmstudio',
     name: 'LM Studio',
     strengths: ['code', 'conversation', 'creative'],
     contextWindow: 8192,
@@ -44,7 +48,53 @@ export const modelRegistry: ModelCapabilities[] = [
     isLocal: true,
   },
   {
-    provider: 'cloud-google',
+    providerId: 'llamacpp',
+    name: 'llama.cpp Server',
+    strengths: ['code', 'conversation', 'quick'],
+    contextWindow: 4096,
+    speed: 'fast',
+    cost: 'free',
+    isLocal: true,
+  },
+  {
+    providerId: 'koboldcpp',
+    name: 'KoboldCpp',
+    strengths: ['creative', 'conversation'],
+    contextWindow: 4096,
+    speed: 'medium',
+    cost: 'free',
+    isLocal: true,
+  },
+  {
+    providerId: 'localai',
+    name: 'LocalAI',
+    strengths: ['code', 'conversation', 'analysis'],
+    contextWindow: 8192,
+    speed: 'medium',
+    cost: 'free',
+    isLocal: true,
+  },
+  {
+    providerId: 'textgenweb',
+    name: 'Text Generation WebUI',
+    strengths: ['creative', 'conversation'],
+    contextWindow: 4096,
+    speed: 'medium',
+    cost: 'free',
+    isLocal: true,
+  },
+  {
+    providerId: 'vllm',
+    name: 'vLLM',
+    strengths: ['code', 'analysis', 'long-context'],
+    contextWindow: 32768,
+    speed: 'fast',
+    cost: 'free',
+    isLocal: true,
+  },
+  // Cloud providers
+  {
+    providerId: 'google',
     name: 'Google Gemini',
     strengths: ['long-context', 'analysis', 'summarization', 'creative'],
     contextWindow: 1000000,
@@ -53,7 +103,7 @@ export const modelRegistry: ModelCapabilities[] = [
     isLocal: false,
   },
   {
-    provider: 'cloud-openai',
+    providerId: 'openai',
     name: 'OpenAI GPT-4o',
     strengths: ['code', 'creative', 'analysis', 'conversation'],
     contextWindow: 128000,
@@ -62,7 +112,7 @@ export const modelRegistry: ModelCapabilities[] = [
     isLocal: false,
   },
   {
-    provider: 'cloud-anthropic',
+    providerId: 'anthropic',
     name: 'Anthropic Claude',
     strengths: ['code', 'analysis', 'creative', 'long-context'],
     contextWindow: 200000,
@@ -73,9 +123,9 @@ export const modelRegistry: ModelCapabilities[] = [
 ];
 
 export interface OrchestratorConfig {
-  preferLocal: boolean;           // Prefer local models when suitable
-  fallbackToCloud: boolean;       // Use cloud if local fails
-  maxContextRatio: number;        // Max % of context window to use (e.g., 0.8)
+  preferLocal: boolean;
+  fallbackToCloud: boolean;
+  maxContextRatio: number;
   speedPriority: 'fast' | 'balanced' | 'quality';
 }
 
@@ -86,11 +136,9 @@ export const defaultOrchestratorConfig: OrchestratorConfig = {
   speedPriority: 'balanced',
 };
 
-// Detect task type from message content
 export function detectTaskType(message: string): TaskType {
   const lowerMessage = message.toLowerCase();
   
-  // Code detection
   const codePatterns = [
     /```[\s\S]*```/,
     /\b(function|const|let|var|class|def|import|export)\b/,
@@ -100,33 +148,27 @@ export function detectTaskType(message: string): TaskType {
     return 'code';
   }
 
-  // Translation detection
   if (/\b(translate|перевод|переведи|translation|в|на)\b/i.test(lowerMessage) && 
       /\b(english|russian|spanish|french|german|chinese|русский|английский)\b/i.test(lowerMessage)) {
     return 'translation';
   }
 
-  // Summarization detection
   if (/\b(summarize|summary|краткое|резюме|кратко|tl;dr|tldr)\b/i.test(lowerMessage)) {
     return 'summarization';
   }
 
-  // Analysis detection
   if (/\b(analyze|analysis|анализ|compare|comparison|evaluate|assess|explain why|reasoning)\b/i.test(lowerMessage)) {
     return 'analysis';
   }
 
-  // Creative detection
   if (/\b(write|create|story|poem|creative|imagine|brainstorm|idea|напиши|придумай)\b/i.test(lowerMessage)) {
     return 'creative';
   }
 
-  // Long context detection (by message length)
   if (message.length > 10000) {
     return 'long-context';
   }
 
-  // Quick response detection
   if (message.length < 100 && !message.includes('?')) {
     return 'quick';
   }
@@ -134,120 +176,112 @@ export function detectTaskType(message: string): TaskType {
   return 'conversation';
 }
 
-// Estimate token count (rough approximation)
 export function estimateTokenCount(text: string): number {
-  // Rough estimate: ~4 characters per token for English, ~2 for Russian
   const hasRussian = /[а-яА-ЯёЁ]/.test(text);
   const charsPerToken = hasRussian ? 2 : 4;
   return Math.ceil(text.length / charsPerToken);
 }
 
-// Select best model for the task
 export function selectModel(
   taskType: TaskType,
   messageLength: number,
-  availableProviders: AIProvider[],
+  availableProviders: ProviderId[],
   config: OrchestratorConfig = defaultOrchestratorConfig
-): AIProvider {
+): ProviderId {
   const estimatedTokens = estimateTokenCount(new Array(messageLength).fill('a').join(''));
   
-  // Filter models that are available
   const availableModels = modelRegistry.filter(m => 
-    availableProviders.includes(m.provider)
+    availableProviders.includes(m.providerId)
   );
 
   if (availableModels.length === 0) {
-    return 'local-ollama'; // Default fallback
+    return 'ollama';
   }
 
-  // Score each model
   const scoredModels = availableModels.map(model => {
     let score = 0;
 
-    // Strength match (+30 points)
     if (model.strengths.includes(taskType)) {
       score += 30;
     }
 
-    // Context window suitability (+20 points if fits)
     const maxUsableContext = model.contextWindow * config.maxContextRatio;
     if (estimatedTokens <= maxUsableContext) {
       score += 20;
     } else {
-      score -= 50; // Penalty for context overflow
+      score -= 50;
     }
 
-    // Local preference (+15 points if preferLocal)
     if (config.preferLocal && model.isLocal) {
       score += 15;
     }
 
-    // Speed priority
     if (config.speedPriority === 'fast') {
       if (model.speed === 'fast') score += 20;
       if (model.speed === 'slow') score -= 10;
     } else if (config.speedPriority === 'quality') {
-      if (model.speed === 'slow') score += 10; // Quality models are often slower
-      if (model.cost === 'high') score += 5;   // Higher cost often means better
+      if (model.speed === 'slow') score += 10;
+      if (model.cost === 'high') score += 5;
     }
 
-    // Cost consideration
     if (model.cost === 'free') score += 10;
     if (model.cost === 'high') score -= 5;
 
     return { model, score };
   });
 
-  // Sort by score (descending)
   scoredModels.sort((a, b) => b.score - a.score);
 
-  return scoredModels[0].model.provider;
+  return scoredModels[0].model.providerId;
 }
 
-// Get fallback chain for a provider
 export function getFallbackChain(
-  primaryProvider: AIProvider,
-  availableProviders: AIProvider[]
-): AIProvider[] {
-  const chain: AIProvider[] = [primaryProvider];
+  primaryProvider: ProviderId,
+  availableProviders: ProviderId[]
+): ProviderId[] {
+  const chain: ProviderId[] = [primaryProvider];
   
-  // Add other available providers as fallbacks
-  const isLocalPrimary = isLocalProvider(primaryProvider);
+  const providers = useProviderStore.getState().providers;
+  const isLocalPrimary = providers.find(p => p.id === primaryProvider)?.type === 'local';
   
-  // If primary is local, add other local first, then cloud
   if (isLocalPrimary) {
-    const otherLocal = availableProviders.filter(p => 
-      isLocalProvider(p) && p !== primaryProvider
-    );
-    const cloudProviders = availableProviders.filter(p => !isLocalProvider(p));
+    const otherLocal = availableProviders.filter(id => {
+      const p = providers.find(pr => pr.id === id);
+      return p?.type === 'local' && id !== primaryProvider;
+    });
+    const cloudProviders = availableProviders.filter(id => {
+      const p = providers.find(pr => pr.id === id);
+      return p?.type !== 'local';
+    });
     chain.push(...otherLocal, ...cloudProviders);
   } else {
-    // If primary is cloud, add other cloud first, then local
-    const otherCloud = availableProviders.filter(p => 
-      !isLocalProvider(p) && p !== primaryProvider
-    );
-    const localProviders = availableProviders.filter(p => isLocalProvider(p));
+    const otherCloud = availableProviders.filter(id => {
+      const p = providers.find(pr => pr.id === id);
+      return p?.type !== 'local' && id !== primaryProvider;
+    });
+    const localProviders = availableProviders.filter(id => {
+      const p = providers.find(pr => pr.id === id);
+      return p?.type === 'local';
+    });
     chain.push(...otherCloud, ...localProviders);
   }
 
-  return chain.filter((p, i, arr) => arr.indexOf(p) === i); // Remove duplicates
+  return chain.filter((p, i, arr) => arr.indexOf(p) === i);
 }
 
-// Export orchestrator function
 export function orchestrate(
   message: string,
   conversationHistory: string[],
-  availableProviders: AIProvider[],
+  availableProviders: ProviderId[],
   config?: Partial<OrchestratorConfig>
 ): {
-  selectedProvider: AIProvider;
+  selectedProvider: ProviderId;
   taskType: TaskType;
-  fallbackChain: AIProvider[];
+  fallbackChain: ProviderId[];
   reasoning: string;
 } {
   const fullConfig = { ...defaultOrchestratorConfig, ...config };
   
-  // Combine message with recent history for context
   const fullContext = [...conversationHistory.slice(-5), message].join('\n');
   
   const taskType = detectTaskType(message);
@@ -259,7 +293,7 @@ export function orchestrate(
   );
   const fallbackChain = getFallbackChain(selectedProvider, availableProviders);
 
-  const modelInfo = modelRegistry.find(m => m.provider === selectedProvider);
+  const modelInfo = modelRegistry.find(m => m.providerId === selectedProvider);
   const reasoning = `Task: ${taskType} → Model: ${modelInfo?.name || selectedProvider} (${modelInfo?.strengths.join(', ')})`;
 
   return {
@@ -269,3 +303,12 @@ export function orchestrate(
     reasoning,
   };
 }
+
+// Helper for backward compatibility
+export function isLocalProvider(providerId: ProviderId): boolean {
+  const provider = useProviderStore.getState().providers.find(p => p.id === providerId);
+  return provider?.type === 'local';
+}
+
+// Backward compatibility type alias
+export type AIProvider = ProviderId;

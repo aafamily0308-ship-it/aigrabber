@@ -58,12 +58,22 @@ import {
 import { Badge } from "@/components/ui/badge";
 
 const providerOptions: { id: ProviderType; name: string; icon: typeof Cloud; type: 'local' | 'cloud' }[] = [
-  { id: 'local-ollama', name: 'Ollama (Local)', icon: Cpu, type: 'local' },
-  { id: 'local-lmstudio', name: 'LM Studio (Local)', icon: Cpu, type: 'local' },
-  { id: 'cloud-gemini', name: 'Google AI (Gemini)', icon: Cloud, type: 'cloud' },
-  { id: 'cloud-gpt5', name: 'OpenAI (GPT-4o)', icon: Cloud, type: 'cloud' },
-  { id: 'cloud-anthropic' as ProviderType, name: 'Anthropic (Claude)', icon: Cloud, type: 'cloud' },
+  { id: 'ollama', name: 'Ollama (Local)', icon: Cpu, type: 'local' },
+  { id: 'lmstudio', name: 'LM Studio (Local)', icon: Cpu, type: 'local' },
+  { id: 'llamacpp', name: 'llama.cpp (Local)', icon: Cpu, type: 'local' },
+  { id: 'koboldcpp', name: 'KoboldCpp (Local)', icon: Cpu, type: 'local' },
+  { id: 'localai', name: 'LocalAI (Local)', icon: Cpu, type: 'local' },
+  { id: 'textgenweb', name: 'TextGen WebUI (Local)', icon: Cpu, type: 'local' },
+  { id: 'vllm', name: 'vLLM (Local)', icon: Cpu, type: 'local' },
+  { id: 'google', name: 'Google AI (Gemini)', icon: Cloud, type: 'cloud' },
+  { id: 'openai', name: 'OpenAI (GPT-4o)', icon: Cloud, type: 'cloud' },
+  { id: 'anthropic', name: 'Anthropic (Claude)', icon: Cloud, type: 'cloud' },
 ];
+
+// Helper to check if provider is cloud type
+const isCloudProviderType = (id: ProviderType): boolean => {
+  return ['google', 'openai', 'anthropic'].includes(id);
+};
 
 export default function Chat() {
   const [input, setInput] = useState("");
@@ -101,12 +111,12 @@ export default function Chat() {
 
   const activeConversation = conversations.find(c => c.id === activeConversationId);
   const selectedPrompt = prompts.find(p => p.id === selectedPromptId);
-  const isCloudProvider = !selectedProvider.startsWith('local-');
-  const providerNeedsKey = needsApiKey(selectedProvider as any);
+  const isCloudProvider = isCloudProviderType(selectedProvider);
+  const providerNeedsKey = isCloudProvider;
   const hasRequiredKey = !providerNeedsKey || 
-    (selectedProvider.includes('openai') || selectedProvider === 'cloud-gpt5' ? cloudApiKeys.openai :
-     selectedProvider.includes('google') || selectedProvider === 'cloud-gemini' ? cloudApiKeys.google :
-     selectedProvider.includes('anthropic') ? cloudApiKeys.anthropic : false);
+    (selectedProvider === 'openai' ? cloudApiKeys.openai :
+     selectedProvider === 'google' ? cloudApiKeys.google :
+     selectedProvider === 'anthropic' ? cloudApiKeys.anthropic : false);
 
   // Calculate context stats
   const contextStats = useMemo(() => {
@@ -155,7 +165,7 @@ export default function Chat() {
   // Block cloud providers if paranoid mode is on
   useEffect(() => {
     if (paranoidMode && isCloudProvider) {
-      setSelectedProvider('local-ollama');
+      setSelectedProvider('ollama');
       toast({
         title: "Paranoid Mode Active",
         description: "Switched to local provider. Cloud providers are disabled.",
@@ -299,11 +309,11 @@ export default function Chat() {
 
       // Determine API key for cloud providers
       let apiKey: string | undefined;
-      if (providerToUse === 'cloud-gemini' || providerToUse === 'cloud-google' as any) {
+      if (providerToUse === 'google') {
         apiKey = cloudApiKeys.google;
-      } else if (providerToUse === 'cloud-gpt5' || providerToUse === 'cloud-openai' as any) {
+      } else if (providerToUse === 'openai') {
         apiKey = cloudApiKeys.openai;
-      } else if (providerToUse === 'cloud-anthropic' as any) {
+      } else if (providerToUse === 'anthropic') {
         apiKey = cloudApiKeys.anthropic;
       }
 
