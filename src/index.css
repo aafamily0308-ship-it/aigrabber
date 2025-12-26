@@ -67,9 +67,98 @@
     --font-sans: 'Inter', system-ui, sans-serif;
   }
 
+  /* Accent Color Variants */
+  [data-accent="cyan"] {
+    --primary: 187 100% 50%;
+    --ring: 187 100% 50%;
+    --sidebar-primary: 187 100% 50%;
+    --sidebar-ring: 187 100% 50%;
+    --glass-border: hsl(187 100% 50% / 0.2);
+    --gradient-primary: linear-gradient(135deg, hsl(187 100% 50%), hsl(270 60% 60%));
+    --gradient-glow: 0 0 40px hsl(187 100% 50% / 0.3);
+  }
+
+  [data-accent="purple"] {
+    --primary: 270 60% 60%;
+    --ring: 270 60% 60%;
+    --sidebar-primary: 270 60% 60%;
+    --sidebar-ring: 270 60% 60%;
+    --glass-border: hsl(270 60% 60% / 0.2);
+    --gradient-primary: linear-gradient(135deg, hsl(270 60% 60%), hsl(320 70% 60%));
+    --gradient-glow: 0 0 40px hsl(270 60% 60% / 0.3);
+  }
+
+  [data-accent="green"] {
+    --primary: 142 70% 45%;
+    --ring: 142 70% 45%;
+    --sidebar-primary: 142 70% 45%;
+    --sidebar-ring: 142 70% 45%;
+    --glass-border: hsl(142 70% 45% / 0.2);
+    --gradient-primary: linear-gradient(135deg, hsl(142 70% 45%), hsl(170 60% 50%));
+    --gradient-glow: 0 0 40px hsl(142 70% 45% / 0.3);
+  }
+
+  [data-accent="orange"] {
+    --primary: 25 95% 53%;
+    --ring: 25 95% 53%;
+    --sidebar-primary: 25 95% 53%;
+    --sidebar-ring: 25 95% 53%;
+    --glass-border: hsl(25 95% 53% / 0.2);
+    --gradient-primary: linear-gradient(135deg, hsl(25 95% 53%), hsl(45 93% 47%));
+    --gradient-glow: 0 0 40px hsl(25 95% 53% / 0.3);
+  }
+
+  [data-accent="pink"] {
+    --primary: 330 80% 60%;
+    --ring: 330 80% 60%;
+    --sidebar-primary: 330 80% 60%;
+    --sidebar-ring: 330 80% 60%;
+    --glass-border: hsl(330 80% 60% / 0.2);
+    --gradient-primary: linear-gradient(135deg, hsl(330 80% 60%), hsl(280 70% 60%));
+    --gradient-glow: 0 0 40px hsl(330 80% 60% / 0.3);
+  }
+
+  [data-accent="blue"] {
+    --primary: 217 91% 60%;
+    --ring: 217 91% 60%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-ring: 217 91% 60%;
+    --glass-border: hsl(217 91% 60% / 0.2);
+    --gradient-primary: linear-gradient(135deg, hsl(217 91% 60%), hsl(187 100% 50%));
+    --gradient-glow: 0 0 40px hsl(217 91% 60% / 0.3);
+  }
+
   .dark {
     --background: 222 47% 6%;
     --foreground: 210 40% 98%;
+  }
+
+  .light {
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 98%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --glass-bg: hsl(0 0% 100% / 0.7);
+  }
+
+  /* High Contrast Mode */
+  .high-contrast {
+    --foreground: 0 0% 100%;
+    --muted-foreground: 0 0% 80%;
+    --border: 0 0% 40%;
+  }
+
+  /* Reduced Motion */
+  .reduced-motion * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
 
@@ -103,7 +192,7 @@
   }
 
   .glow-text {
-    text-shadow: 0 0 20px hsl(187 100% 50% / 0.5);
+    text-shadow: 0 0 20px hsl(var(--primary) / 0.5);
   }
 
   .gradient-primary {
@@ -144,5 +233,74 @@
 
   .status-pending {
     @apply w-2 h-2 rounded-full bg-yellow-500 shadow-[0_0_8px_hsl(38_92%_50%)] animate-pulse;
+  }
+
+  /* Markdown Styles */
+  .markdown-content {
+    @apply text-foreground;
+  }
+
+  .markdown-content h1,
+  .markdown-content h2,
+  .markdown-content h3 {
+    @apply font-semibold text-foreground mt-4 mb-2;
+  }
+
+  .markdown-content h1 {
+    @apply text-2xl;
+  }
+
+  .markdown-content h2 {
+    @apply text-xl;
+  }
+
+  .markdown-content h3 {
+    @apply text-lg;
+  }
+
+  .markdown-content p {
+    @apply mb-2;
+  }
+
+  .markdown-content ul,
+  .markdown-content ol {
+    @apply ml-4 mb-2;
+  }
+
+  .markdown-content ul {
+    @apply list-disc;
+  }
+
+  .markdown-content ol {
+    @apply list-decimal;
+  }
+
+  .markdown-content li {
+    @apply mb-1;
+  }
+
+  .markdown-content a {
+    @apply text-primary hover:underline;
+  }
+
+  .markdown-content blockquote {
+    @apply border-l-4 border-primary/50 pl-4 italic text-muted-foreground;
+  }
+
+  .markdown-content table {
+    @apply w-full border-collapse my-4;
+  }
+
+  .markdown-content th,
+  .markdown-content td {
+    @apply border border-border px-3 py-2 text-left;
+  }
+
+  .markdown-content th {
+    @apply bg-muted font-semibold;
+  }
+
+  .markdown-content hr {
+    @apply my-4 border-border;
   }
 }

@@ -7,17 +7,26 @@ import {
   CheckCircle, 
   AlertCircle,
   Loader2,
-  File,
-  BookOpen
+  BookOpen,
+  Eye
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useKnowledgeStore, Document } from "@/stores/knowledgeStore";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
+import { parseDocument } from "@/lib/documentParser";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 export default function Knowledge() {
   const [dragActive, setDragActive] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState<Document | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   
@@ -27,6 +36,7 @@ export default function Knowledge() {
     searchQuery,
     addDocument,
     updateDocumentStatus,
+    updateDocumentChunks,
     removeDocument,
     toggleDocumentSelection,
     setSearchQuery,
@@ -62,32 +72,25 @@ export default function Knowledge() {
       status: 'processing',
     });
 
-    // Process text files locally
-    if (extension === 'txt' || extension === 'md') {
-      try {
-        const text = await file.text();
-        updateDocumentStatus(docId, 'ready', text);
-        toast({
-          title: "Document added",
-          description: `${file.name} is ready to use.`,
-        });
-      } catch (error) {
-        updateDocumentStatus(docId, 'error');
-        toast({
-          title: "Error processing file",
-          description: "Could not read the file content.",
-          variant: "destructive",
-        });
-      }
-    } else {
-      // For other types, mark as ready (full processing would need backend)
-      setTimeout(() => {
-        updateDocumentStatus(docId, 'ready', `[Content of ${file.name}]`);
-        toast({
-          title: "Document added",
-          description: `${file.name} is ready to use.`,
-        });
-      }, 1500);
+    try {
+      // Use the document parser for all file types
+      const parsed = await parseDocument(file);
+      
+      updateDocumentStatus(docId, 'ready', parsed.text);
+      updateDocumentChunks(docId, parsed.chunks);
+      
+      toast({
+        title: "Document added",
+        description: `${file.name} is ready. ${parsed.wordCount} words extracted.`,
+      });
+    } catch (error) {
+      console.error('Document parsing error:', error);
+      updateDocumentStatus(docId, 'error');
+      toast({
+        title: "Error processing file",
+        description: error instanceof Error ? error.message : "Could not read the file content.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -170,7 +173,7 @@ export default function Knowledge() {
               </button>
             </p>
             <p className="text-sm text-muted-foreground mt-1">
-              Supports PDF, TXT, MD, EPUB, DOCX
+              Supports PDF, TXT, MD, EPUB, DOCX • Processed locally in your browser
             </p>
           </div>
         </div>
@@ -212,6 +215,7 @@ export default function Knowledge() {
                   doc.type === 'pdf' ? "bg-red-500/20" :
                   doc.type === 'md' ? "bg-blue-500/20" :
                   doc.type === 'txt' ? "bg-gray-500/20" :
+                  doc.type === 'docx' ? "bg-blue-600/20" :
                   "bg-purple-500/20"
                 )}>
                   <FileText className={cn(
@@ -219,6 +223,7 @@ export default function Knowledge() {
                     doc.type === 'pdf' ? "text-red-400" :
                     doc.type === 'md' ? "text-blue-400" :
                     doc.type === 'txt' ? "text-gray-400" :
+                    doc.type === 'docx' ? "text-blue-500" :
                     "text-purple-400"
                   )} />
                 </div>
@@ -228,6 +233,12 @@ export default function Knowledge() {
                     <span>{formatFileSize(doc.size)}</span>
                     <span>•</span>
                     <span>{doc.type.toUpperCase()}</span>
+                    {doc.chunks && doc.chunks.length > 0 && (
+                      <>
+                        <span>•</span>
+                        <span>{doc.chunks.length} chunks</span>
+                      </>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -246,22 +257,49 @@ export default function Knowledge() {
                 <span className="text-xs text-muted-foreground">
                   {formatDistanceToNow(new Date(doc.createdAt), { addSuffix: true })}
                 </span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    removeDocument(doc.id);
-                  }}
-                >
-                  <Trash2 className="w-4 h-4 text-destructive" />
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPreviewDoc(doc);
+                    }}
+                  >
+                    <Eye className="w-4 h-4 text-muted-foreground" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeDocument(doc.id);
+                    }}
+                  >
+                    <Trash2 className="w-4 h-4 text-destructive" />
+                  </Button>
+                </div>
               </div>
             </div>
           ))}
         </div>
       )}
+
+      {/* Preview Dialog */}
+      <Dialog open={!!previewDoc} onOpenChange={() => setPreviewDoc(null)}>
+        <DialogContent className="max-w-3xl max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle>{previewDoc?.name}</DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="h-[60vh] mt-4">
+            <pre className="text-sm text-muted-foreground whitespace-pre-wrap font-mono">
+              {previewDoc?.content || 'No content available'}
+            </pre>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

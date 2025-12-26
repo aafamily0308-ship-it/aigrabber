@@ -7,6 +7,7 @@ export interface Document {
   type: 'pdf' | 'txt' | 'md' | 'epub' | 'docx';
   size: number;
   content?: string;
+  chunks?: string[];
   status: 'processing' | 'ready' | 'error';
   createdAt: Date;
 }
@@ -19,6 +20,7 @@ interface KnowledgeState {
   // Actions
   addDocument: (doc: Omit<Document, 'id' | 'createdAt'>) => string;
   updateDocumentStatus: (id: string, status: Document['status'], content?: string) => void;
+  updateDocumentChunks: (id: string, chunks: string[]) => void;
   removeDocument: (id: string) => void;
   toggleDocumentSelection: (id: string) => void;
   clearSelection: () => void;
@@ -49,6 +51,13 @@ export const useKnowledgeStore = create<KnowledgeState>()(
         set((state) => ({
           documents: state.documents.map((d) =>
             d.id === id ? { ...d, status, content: content || d.content } : d
+          ),
+        })),
+
+      updateDocumentChunks: (id, chunks) =>
+        set((state) => ({
+          documents: state.documents.map((d) =>
+            d.id === id ? { ...d, chunks } : d
           ),
         })),
 

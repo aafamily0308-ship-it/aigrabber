@@ -12,14 +12,14 @@ serve(async (req) => {
   }
 
   try {
-    const { messages, provider } = await req.json();
+    const { messages, provider, systemPrompt, temperature, maxTokens } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    console.log(`Chat request with provider: ${provider}, messages: ${messages.length}`);
+    console.log(`Chat request - Provider: ${provider}, Messages: ${messages.length}, Temp: ${temperature}, MaxTokens: ${maxTokens}`);
 
     // Determine model based on provider
     let model = "google/gemini-2.5-flash"; // default
@@ -29,7 +29,10 @@ serve(async (req) => {
       model = "google/gemini-2.5-pro";
     }
 
-    const systemPrompt = `You are a helpful AI assistant in the AI Command Center. You provide clear, concise, and accurate responses. You can help with coding, analysis, creative writing, and general questions. Be friendly but professional.`;
+    // Use custom system prompt or default
+    const defaultSystemPrompt = `You are a helpful AI assistant in the AI Command Center. You provide clear, concise, and accurate responses. You can help with coding, analysis, creative writing, and general questions. Be friendly but professional.`;
+    
+    const finalSystemPrompt = systemPrompt || defaultSystemPrompt;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -40,10 +43,12 @@ serve(async (req) => {
       body: JSON.stringify({
         model,
         messages: [
-          { role: "system", content: systemPrompt },
+          { role: "system", content: finalSystemPrompt },
           ...messages,
         ],
         stream: true,
+        temperature: temperature ?? 0.7,
+        max_tokens: maxTokens ?? 4096,
       }),
     });
 
