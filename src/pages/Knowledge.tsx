@@ -8,7 +8,8 @@ import {
   AlertCircle,
   Loader2,
   BookOpen,
-  Eye
+  Eye,
+  Database
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useKnowledgeStore, Document } from "@/stores/knowledgeStore";
@@ -16,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
 import { parseDocument } from "@/lib/documentParser";
+import { indexDocument, removeFromIndex } from "@/lib/ragPipeline";
 import {
   Dialog,
   DialogContent,
@@ -79,9 +81,21 @@ export default function Knowledge() {
       updateDocumentStatus(docId, 'ready', parsed.text);
       updateDocumentChunks(docId, parsed.chunks);
       
+      // Index document for RAG
+      try {
+        await indexDocument({
+          id: docId,
+          name: file.name,
+          content: parsed.text,
+          metadata: { type: extension, size: file.size },
+        });
+      } catch (indexError) {
+        console.warn('RAG indexing failed:', indexError);
+      }
+      
       toast({
         title: "Document added",
-        description: `${file.name} is ready. ${parsed.wordCount} words extracted.`,
+        description: `${file.name} is ready. ${parsed.wordCount} words extracted and indexed for RAG.`,
       });
     } catch (error) {
       console.error('Document parsing error:', error);
@@ -273,8 +287,14 @@ export default function Knowledge() {
                     variant="ghost"
                     size="icon"
                     className="h-7 w-7"
-                    onClick={(e) => {
+                    onClick={async (e) => {
                       e.stopPropagation();
+                      // Remove from RAG index first
+                      try {
+                        await removeFromIndex(doc.id);
+                      } catch (err) {
+                        console.warn('Failed to remove from index:', err);
+                      }
                       removeDocument(doc.id);
                     }}
                   >

@@ -1,8 +1,7 @@
 // Vector Store - IndexedDB-based vector storage for semantic search
 // Phase 3: Memory & RAG
 
-import { initDB } from './indexedDBStore';
-import { EmbeddingVector, cosineSimilarity, findTopK } from './embeddingService';
+import { cosineSimilarity, findTopK } from './embeddingService';
 
 const VECTOR_STORE_NAME = 'vectors';
 
