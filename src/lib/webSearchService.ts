@@ -162,7 +162,7 @@ async function searchSearXNG(query: string, options: SearchOptions): Promise<Sea
       const data = await response.json();
       
       if (data.results && Array.isArray(data.results)) {
-        return data.results.slice(0, maxResults).map((r: any) => ({
+        return data.results.slice(0, maxResults).map((r: { title?: string; url: string; content?: string }) => ({
           title: r.title || r.url,
           url: r.url,
           snippet: r.content || '',

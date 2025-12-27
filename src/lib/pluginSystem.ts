@@ -1,6 +1,74 @@
 // Plugin System - Extensible architecture for adding new AI capabilities
 // Phase 4: MCP & Plugins
 
+// Safe math expression evaluator (no eval/Function)
+function safeEvaluateMath(expression: string): number {
+  // Remove whitespace
+  const expr = expression.replace(/\s+/g, '');
+  
+  // Validate: only allow numbers, operators, parentheses, decimal points
+  if (!/^[0-9+\-*/.()%]+$/.test(expr)) {
+    throw new Error('Invalid characters in expression');
+  }
+  
+  // Simple recursive descent parser for basic math
+  let pos = 0;
+  
+  function parseNumber(): number {
+    let numStr = '';
+    while (pos < expr.length && /[0-9.]/.test(expr[pos])) {
+      numStr += expr[pos++];
+    }
+    if (numStr === '') throw new Error('Expected number');
+    return parseFloat(numStr);
+  }
+  
+  function parseFactor(): number {
+    if (expr[pos] === '(') {
+      pos++; // skip '('
+      const result = parseExpression();
+      if (expr[pos] !== ')') throw new Error('Missing closing parenthesis');
+      pos++; // skip ')'
+      return result;
+    }
+    if (expr[pos] === '-') {
+      pos++;
+      return -parseFactor();
+    }
+    return parseNumber();
+  }
+  
+  function parseTerm(): number {
+    let result = parseFactor();
+    while (pos < expr.length && (expr[pos] === '*' || expr[pos] === '/' || expr[pos] === '%')) {
+      const op = expr[pos++];
+      const right = parseFactor();
+      if (op === '*') result *= right;
+      else if (op === '/') {
+        if (right === 0) throw new Error('Division by zero');
+        result /= right;
+      }
+      else if (op === '%') result %= right;
+    }
+    return result;
+  }
+  
+  function parseExpression(): number {
+    let result = parseTerm();
+    while (pos < expr.length && (expr[pos] === '+' || expr[pos] === '-')) {
+      const op = expr[pos++];
+      const right = parseTerm();
+      if (op === '+') result += right;
+      else result -= right;
+    }
+    return result;
+  }
+  
+  const result = parseExpression();
+  if (pos < expr.length) throw new Error('Unexpected character at position ' + pos);
+  return result;
+}
+
 export interface PluginMetadata {
   id: string;
   name: string;
@@ -262,18 +330,9 @@ export const builtInPlugins: Plugin[] = [
         },
         execute: async (args) => {
           const expr = args.expression as string;
-          // Safe math evaluation (only numbers and operators)
-          const sanitized = expr.replace(/[^0-9+\-*/().%\s]/g, '');
-          if (sanitized !== expr) {
-            throw new Error('Invalid characters in expression');
-          }
-          try {
-            // Use Function instead of eval for slightly better safety
-            const result = new Function(`return ${sanitized}`)();
-            return { expression: expr, result };
-          } catch {
-            throw new Error('Invalid mathematical expression');
-          }
+          // Safe math evaluation using safe parser
+          const result = safeEvaluateMath(expr);
+          return { expression: expr, result };
         },
       },
     ],
