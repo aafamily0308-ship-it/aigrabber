@@ -2,7 +2,7 @@
 // Acts as the "Головной мозг" (Head Brain) of the system
 
 import { runIntegrityCheck, runQuickIntegrityCheck, IntegrityReport } from './systemIntegrity';
-import { runStressTests, runQuickStressTest, StressTestReport } from './stressTest';
+import { runStressTests, StressTestReport } from './stressTest';
 import { streamAI, testProvider, AIProvider } from './localAIClient';
 import { useProviderStore } from '@/stores/providerStore';
 import { useSettingsStore } from '@/stores/settingsStore';

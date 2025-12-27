@@ -74,7 +74,7 @@ export const consoleCommands: Map<string, ConsoleCommand> = new Map([
     name: 'status',
     description: 'Показать статус всех провайдеров',
     usage: '/status',
-    execute: (_, context) => {
+    execute: (_args, context) => {
       const providers = context.getProviders();
       const statusIcon = (s: string) => s === 'online' ? '🟢' : s === 'checking' ? '🟡' : '🔴';
       return `📊 Статус провайдеров:\n${providers.map(p => 
@@ -87,7 +87,7 @@ export const consoleCommands: Map<string, ConsoleCommand> = new Map([
     name: 'clear',
     description: 'Очистить историю чата',
     usage: '/clear',
-    execute: (_, context) => {
+    execute: (_args, context) => {
       context.clearHistory();
       return '🗑️ История очищена';
     },
@@ -128,7 +128,7 @@ export const consoleCommands: Map<string, ConsoleCommand> = new Map([
     name: 'ping',
     description: 'Проверить соединение с провайдером',
     usage: '/ping',
-    execute: async (_, context) => {
+    execute: async (_args, context) => {
       const { providerRegistry } = await import('@/lib/providers');
       const { useProviderStore } = await import('@/stores/providerStore');
       
@@ -164,7 +164,7 @@ export const consoleCommands: Map<string, ConsoleCommand> = new Map([
     name: 'models',
     description: 'Показать доступные модели текущего провайдера',
     usage: '/models',
-    execute: async (_, context) => {
+    execute: async (_args, context) => {
       const { providerRegistry } = await import('@/lib/providers');
       const { useProviderStore } = await import('@/stores/providerStore');
       
@@ -194,7 +194,7 @@ export const consoleCommands: Map<string, ConsoleCommand> = new Map([
     name: 'config',
     description: 'Показать текущую конфигурацию системы',
     usage: '/config',
-    execute: async () => {
+    execute: async (_args) => {
       const { useProviderStore } = await import('@/stores/providerStore');
       const { useSettingsStore } = await import('@/stores/settingsStore');
       
@@ -224,7 +224,7 @@ ${activeProviders.map(p => `  ${p.status === 'online' ? '🟢' : '🔴'} ${p.nam
     name: 'export',
     description: 'Экспортировать конфигурацию провайдеров',
     usage: '/export',
-    execute: async () => {
+    execute: async (_args) => {
       const { providerRegistry } = await import('@/lib/providers');
       const config = providerRegistry.exportConfig();
       
@@ -262,7 +262,7 @@ ${activeProviders.map(p => `  ${p.status === 'online' ? '🟢' : '🔴'} ${p.nam
     name: 'version',
     description: 'Показать версию системы',
     usage: '/version',
-    execute: () => {
+    execute: (_args) => {
       return `🚀 AI Command Center v2.0
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📦 React 18 + TypeScript + Vite
@@ -278,7 +278,7 @@ ${activeProviders.map(p => `  ${p.status === 'online' ? '🟢' : '🔴'} ${p.nam
     name: 'audit',
     description: 'Полный аудит системы',
     usage: '/audit',
-    execute: async () => {
+    execute: async (_args) => {
       const { useProviderStore } = await import('@/stores/providerStore');
       const { useSettingsStore } = await import('@/stores/settingsStore');
       const { useChatStore } = await import('@/stores/chatStore');
